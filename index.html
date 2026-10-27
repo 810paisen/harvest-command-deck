@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Harvest Command Deck v2.7 — Galaxy S25 Ultra Global 5-Tech Edition</title>
+  <title>Harvest Command Deck v2.8 — Galaxy S25 Ultra Global 4-OSS + 5-Tech Edition</title>
   <style>
     :root {
       --bg: #080b11;
@@ -232,11 +232,11 @@
   <header>
     <div class="badge-row">
       <span class="pill pill-emerald">Galaxy S25 Ultra UI</span>
-      <span class="pill pill-violet">v2.7 Global 5-Tech Engine</span>
+      <span class="pill pill-violet">v2.8 Global 4-OSS + 5-Tech</span>
       <span class="pill pill-cyan">100% Fact-Verified</span>
     </div>
-    <h1>Harvest Command Deck v2.7</h1>
-    <div class="subtitle">最終実測更新: 2026-10-27 11:20 JST (UTC+9) ｜ AutoPR × Lila Forge × SolanaBountyHunter × SybilFilter統合</div>
+    <h1>Harvest Command Deck v2.8</h1>
+    <div class="subtitle">最終実測更新: 2026-10-27 11:27 JST (UTC+9) ｜ AutoPR(@8886ddc) × Lila(@8afb084) × SolanaBountyHunter(@3193f62) × xyaz(@8cd8cb9) 実機統合</div>
   </header>
 
   <!-- 1. 最上部：ワンタップ承認ゲート（3大境界線ガバナンスUI） -->
@@ -342,7 +342,7 @@
           <div style="font-weight:700;margin-bottom:3px;">zhangjiayang6835-cyber/bounty-plaza #1904</div>
           <div style="color:var(--muted);margin-bottom:5px;">
             Stellar allowance wait &amp; RPC-lag retry/backoff knobs 実装＋単体テスト4/4 PASS<br/>
-            <span class="code-inline">ev_per_competitor: $13.23</span> ｜ <span class="code-inline">repo_merge_weight: 0.6172</span>
+            <span class="code-inline">ev_per_competitor: $13.23</span> ｜ <span class="code-inline">xyaz_score: 88/100</span> ｜ <span class="code-inline">repo_merge_weight: 0.6172</span>
           </div>
           <div>🔗 PR: <a href="https://github.com/zhangjiayang6835-cyber/bounty-plaza/pull/4138" target="_blank" rel="noopener">https://github.com/zhangjiayang6835-cyber/bounty-plaza/pull/4138</a></div>
           <div>🔗 Claim: <a href="https://github.com/zhangjiayang6835-cyber/bounty-plaza/issues/1904#issuecomment-6431844463" target="_blank" rel="noopener">https://github.com/zhangjiayang6835-cyber/bounty-plaza/issues/1904#issuecomment-6431844463</a></div>
@@ -360,7 +360,7 @@
           <div style="font-weight:700;margin-bottom:3px;">Ikalus1988/MisakaNet #3901 (Intake: #3921)</div>
           <div style="color:var(--muted);margin-bottom:5px;">
             lesson_gate.py Quality Gate PASS (Score 84/100, DCO署名済, コーパス同期完了)<br/>
-            <span class="code-inline">repo_merge_weight: 0.7437</span> ｜ <span class="code-inline">avg_response: 1.2h</span>
+            <span class="code-inline">xyaz_score: 92/100</span> ｜ <span class="code-inline">repo_merge_weight: 0.7437</span> ｜ <span class="code-inline">avg_response: 1.2h</span>
           </div>
           <div>🔗 PR: <a href="https://github.com/Ikalus1988/MisakaNet/pull/3922" target="_blank" rel="noopener">https://github.com/Ikalus1988/MisakaNet/pull/3922</a></div>
           <div>🔗 Comment: <a href="https://github.com/Ikalus1988/MisakaNet/issues/3901#issuecomment-6431829472" target="_blank" rel="noopener">https://github.com/Ikalus1988/MisakaNet/issues/3901#issuecomment-6431829472</a></div>
@@ -404,68 +404,58 @@
     </div>
   </div>
 
-  <!-- 3. グローバル先行5大実戦機構（v2.7 Live Telemetry） -->
+  <!-- 3. 実機クローン導入済グローバル4大OSSエンジン ＋ 5大実戦機構（v2.8 Live Telemetry） -->
   <div class="section-title">
-    <span>③ グローバル先行5大実戦機構（v2.7 統合済）</span>
-    <span class="pill pill-violet">5/5 ACTIVE</span>
+    <span>③ 導入済グローバル4大OSS ＆ 5大実戦機構（v2.8）</span>
+    <span class="pill pill-violet">4 OSS + 5 TECH ACTIVE</span>
   </div>
 
   <div class="kpi-card kpi-tech">
-    <div class="kpi-label">Global Harvest Architecture (AutoPR × Lila × SolanaBountyHunter × SybilFilter)</div>
+    <div class="kpi-label">Global Bounty Engine v2.8 (Box: /workspace/vendor/global_agents &amp; ROG: C:\Users\hidey\work\brain\vendor\global_agents)</div>
     <div class="item-list">
       <div class="item-row">
         <div class="item-meta">
-          <span class="pill pill-violet">1. AutoPR方式</span>
-          <span>SQLite <span class="code-inline">repo_reputation_memory</span> バンディット学習</span>
+          <span class="pill pill-emerald">OSS #1: 64johnlee/autopr (@8886ddc)</span>
+          <span class="pill pill-cyan">DashScope/Qwen無効化済</span>
         </div>
         <div style="color:var(--muted);">
-          リポジトリ別のマージ率・平均応答時間をSQLiteで学習し、放置Repoを自動スキップ：<br/>
-          ・<span class="code-inline">Ikalus1988/MisakaNet</span>: Active <b>0.96</b> / 応答 <b>1.2h</b> / Weight <b>0.7437</b><br/>
-          ・<span class="code-inline">Parabola-org/parabola</span>: Active <b>0.84</b> / 応答 <b>6.5h</b> / Weight <b>0.7705</b><br/>
-          ・<span class="code-inline">zhangjiayang6835-cyber/bounty-plaza</span>: Active <b>0.74</b> / 応答 <b>12.0h</b> / Weight <b>0.6172</b><br/>
-          ・<span class="code-inline">abandoned-crypto-bounty</span>: Active <b>0.05</b> → <b>AUTO_SKIP (Blacklist)</b>
+          ・統合機能: Algora/Opire Scanner + 競合PR計数 + SQLite <span class="code-inline">repo_reputation_memory</span> バンディット学習<br/>
+          ・モデル束縛: <span class="code-inline">nvidia/nemotron-3-ultra-550b-a55b:free</span> + <span class="code-inline">cohere/north-mini-code:free</span><br/>
+          ・学習値: <span class="code-inline">MisakaNet (0.7437)</span> / <span class="code-inline">parabola (0.7705)</span> / <span class="code-inline">bounty-plaza (0.6172)</span> / <span class="code-inline">abandoned (0.0 AUTO_SKIP)</span>
         </div>
       </div>
 
       <div class="item-row">
         <div class="item-meta">
-          <span class="pill pill-cyan">2. Lila Forge × AutoPR方式</span>
-          <span>$50〜$200 SweetSpot × <span class="code-inline">$/Competition</span> ＆ Dry-Time</span>
+          <span class="pill pill-emerald">OSS #2: PARKSystemsCorporation/Lila (@8afb084)</span>
+          <span class="pill pill-cyan">DeepSeek API無効化済</span>
         </div>
         <div style="color:var(--muted);">
+          ・統合機能: <b>Forge</b> ($50〜$200 Bug/Feature スイートスポット抽出) + <b>Scout</b> Dry-Time自動フォールバック + <b>Mark Payout Landed Gate</b><br/>
           ・算出式: <span class="code-inline">ev_per_competitor = reward_usd / (1 + competing_prs * 2.5) * repo_merge_weight</span><br/>
-          ・<b>Dry-Time自動フォールバック</b>: 期待値 <span class="code-inline">$12.0</span> 未満の枯渇時間帯はLLM呼び出しを <b>0回</b> に抑え、国内確定ポイ活（ウエル活1.5倍）・固定費削減（Google AI Pro解約）・提出済PR監視へ自動シフト。
+          ・枯渇時 (<span class="code-inline">EV &lt; $12</span>) はLLM呼び出し0回で国内確定ポイ活・固定費削減・PR監視へ自動シフト。
         </div>
       </div>
 
       <div class="item-row">
         <div class="item-meta">
-          <span class="pill pill-emerald">3. SolanaBountyHunter / xyaz方式</span>
-          <span><span class="code-inline">pr_review_watcher</span> 15分周期自動追従</span>
+          <span class="pill pill-emerald">OSS #3: AfaAgent/solana-bounty-hunter (@3193f62)</span>
+          <span class="pill pill-cyan">外部鍵・XRZLG財布除去済</span>
         </div>
         <div style="color:var(--muted);">
-          ・提出済PR（<span class="code-inline">bounty-plaza#4138</span>, <span class="code-inline">MisakaNet#3922</span>）のCI状態・<span class="code-inline">mergeable</span>・メンテナコメントを15分周期で <span class="code-inline">gh api</span> 監視し、コンフリクトや修正要求に即応。
+          ・統合機能: Superteam Earn <span class="code-inline">/api/agents/listings/live</span> AIエージェント許可案件スキャナ（Read-Only安全モード）<br/>
+          ・元のコードにあった外部作者のハードコードAPI鍵および外部Solanaウォレットは完全除去済。
         </div>
       </div>
 
       <div class="item-row">
         <div class="item-meta">
-          <span class="pill pill-amber">4. AirdropAlert 2026年9月論文方式</span>
-          <span>AI Sybil検知回避（Stylometry分散 ＆ 単一本物垢深耕）</span>
+          <span class="pill pill-emerald">OSS #4: xyaz1313/bounty-hunter-agent (@8cd8cb9)</span>
+          <span class="pill pill-cyan">18件 Live Scan 完了</span>
         </div>
         <div style="color:var(--muted);">
-          ・<b>複垢量産: 0件（完全禁止）</b>。FIDO2パスキー＋実決済履歴を持つアノちゃん単一本物アカウントの取りこぼしゼロ化に集中。<br/>
-          ・PR提出時はRepo固有の <span class="code-inline">CONTRIBUTING.md</span>（DCO署名 / <span class="code-inline">solution_1904.md</span> 等）に完全準拠し、AI定型文指紋（Stylometry）を排除。
-        </div>
-      </div>
-
-      <div class="item-row">
-        <div class="item-meta">
-          <span class="pill pill-rose">5. Lila Operator PWA方式</span>
-          <span>実着金確認ゲート（Mark Payout Landed Gate）</span>
-        </div>
-        <div style="color:var(--muted);">
-          ・マージ・送金が実際に口座へ着金した時のみオペレーター（アノちゃん）がワンタップで着金確定し、未着金バウンティと実着金額（現在 <span class="code-inline">0円</span>）の混同を構造的に防止。
+          ・統合機能: 多言語 <span class="code-inline">gh search issues</span> + 0-100 Feasibility評価器 + 15分周期 <span class="code-inline">pr_review_watcher</span><br/>
+          ・AirdropAlert 2026年9月論文方式の <b>AI Sybil検知回避（複垢量産0件・単一本物垢深耕・Repo固有Stylometry順応）</b> と連動稼働中。
         </div>
       </div>
     </div>
@@ -485,8 +475,8 @@
         <div class="sec-tile-val">0 件 (完全ゼロ)</div>
       </div>
       <div class="sec-tile">
-        <div class="sec-tile-title">Vault / Cookie ブラインド注入</div>
-        <div class="sec-tile-val">ACTIVE (ロックDB不干渉)</div>
+        <div class="sec-tile-title">中国系LLM・外部不正Webhook</div>
+        <div class="sec-tile-val">0 件 (完全無効化済)</div>
       </div>
       <div class="sec-tile">
         <div class="sec-tile-title">CaMeL Dual-LLM 権限分離</div>
@@ -499,17 +489,17 @@
     </div>
     <div style="margin-top:10px;font-size:11.5px;color:var(--muted);">
       ・就業時間帯（09:30〜18:00 JST）MacBook Air 不干渉ルール：<b>厳守中（接触 0回）</b><br/>
-      ・使用LLMモデル：非中国系・完全無料（$0）3モデルのみ固定
+      ・使用LLMモデル：非中国系・完全無料（$0）3モデル（<span class="code-inline">nemotron-3-ultra</span> / <span class="code-inline">north-mini-code</span> / <span class="code-inline">laguna-s-2.1</span>）のみ固定
     </div>
   </div>
 
   <footer>
-    Harvest Command Deck v2.7 — Ledger DB: <code>.harvest_cfo.db (realized_ledger + repo_reputation_memory + pr_review_watcher_state)</code>
+    Harvest Command Deck v2.8 — Ledger DB: <code>.harvest_cfo.db (realized_ledger + repo_reputation_memory + pr_review_watcher_state + global_oss_engines + global_bounty_candidates)</code>
   </footer>
 
   <script>
-    const STORAGE_KEY = 'harvest_command_deck_gates_v27';
-    const PAYOUT_KEY = 'harvest_command_deck_payouts_v27';
+    const STORAGE_KEY = 'harvest_command_deck_gates_v28';
+    const PAYOUT_KEY = 'harvest_command_deck_payouts_v28';
     const defaultGates = {
       'gate-google-ai-pro': { state: 'hold', text: 'ステータス: ⏸️ 保留（ワンタップで切替＆コマンド生成）' },
       'gate-olive-welkatsu': { state: 'approve', text: 'ステータス: ✅ 承認済: Olive 40,000pt ウエル活1.5倍(60,000円分)ルート固定' },
