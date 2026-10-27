@@ -1,0 +1,8 @@
+name = "harvest-command-deck"
+pages_build_output_dir = "."
+compatibility_date = "2026-10-27"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "harvest_cfo_db"
+database_id = "00000000-0000-0000-0000-000000000000"

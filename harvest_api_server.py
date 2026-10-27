@@ -1,919 +1,729 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-Harvest Command Deck Full-Stack Bidirectional API & Ledger Server (v2.9)
-Role: 🔌フルスタックDB1号（双方向API・台帳直結専任）
-- Eliminates static-only `http.server` delivery.
-- Connects Web Dashboard actions (`POST /api/action`) & live reads (`GET /api/state`, `GET /api/ledger`)
-  directly to `/workspace/.harvest_cfo.db` (SQLite WAL).
-- Links one-tap approvals (`set_gate`), payout confirmations (`toggle_payout` / `mark_payout_landed`),
-  task completions (`complete_task`), and bot dispatches (`dispatch_queue`) in real time to
-  `approval_gates`, `deck_gates`, `realized_ledger`, `deck_payouts`, `harvest_targets`,
-  `bot_execution_queue`, and `spawned_worker_bots`.
+=====================================================================
+ /workspace/vm_master_daemon.py
+ 共有Linux VM 常駐マスターデーモン / 双方向SQLite APIサーバー
+ Grok Bot のチャット・Task・SendToAgent を 1回も呼ばずに
+ VM(/workspace) + ROGDeskTop だけで自律稼働させる司令塔
+=====================================================================
+ 正本DB : /workspace/.harvest_cfo.db  (SQLite / 1円単位で厳密分離)
+ API    : GET  /api/state   -> 全状態スナップショット
+          POST /api/action  -> ジョブ発火 / ゲート更新 / 着金確定
+          GET  /api/health  -> 死活
+          GET  /api/logs    -> 直近ジョブログ
+          GET  /            -> /workspace/index.html を配信
+ CORS   : 全オリジン許可 (Cloudflare Pages / 127.0.0.1:8799 / file://)
+ 依存   : Python3 標準ライブラリのみ
+ 起動   : python3 /workspace/vm_master_daemon.py --init
+          python3 /workspace/vm_master_daemon.py
+=====================================================================
 """
+
 from __future__ import annotations
 
-import argparse
-import datetime
 import json
 import os
-import pathlib
+import re
+import shutil
 import sqlite3
+import subprocess
 import sys
 import threading
+import time
+import traceback
+import uuid
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
 
-BASE_DIR = pathlib.Path("/workspace")
-DB_PATH = pathlib.Path(os.environ.get("HARVEST_DB_PATH", str(BASE_DIR / ".harvest_cfo.db")))
-SITE_DIR = pathlib.Path(os.environ.get("HARVEST_SITE_DIR", str(BASE_DIR / "board-site")))
-HOST = os.environ.get("HARVEST_API_HOST", "0.0.0.0")
-PORT = int(os.environ.get("HARVEST_API_PORT", "8799"))
+# ---------------------------------------------------------------------
+# 設定
+# ---------------------------------------------------------------------
+JST = timezone(timedelta(hours=9))
 
-DB_LOCK = threading.Lock()
+WORKSPACE     = os.environ.get("HARVEST_WORKSPACE", "/workspace")
+DB_PATH       = os.environ.get("HARVEST_DB", os.path.join(WORKSPACE, ".harvest_cfo.db"))
+BRAIN_REPO    = os.environ.get("HARVEST_BRAIN_REPO", os.path.join(WORKSPACE, "brain"))
+INDEX_HTML    = os.path.join(WORKSPACE, "index.html")
+MINER_SCRIPT  = os.path.join(WORKSPACE, "vm_algora_miner.py")
+JOB_LOG_PATH  = os.path.join(WORKSPACE, "harvest_jobs.log")
+ROG_QUEUE_REL = os.path.join("tasks", "rog_queue.json")
+ROG_RESULT_REL = os.path.join("results", "rog_result.json")
+PORT          = int(os.environ.get("HARVEST_PORT", "8799"))
+BIND          = os.environ.get("HARVEST_BIND", "0.0.0.0")
+VERSION       = "1.0.0-surgery"
 
-POCKET_ALIAS_MAP = {
-    "4138": ("BOUNTY_PLAZA_1904", 11250, "実提出済・審査待ち (PR #4138 & /claim #1904 comment #6431844463)", "4138", 75.0),
-    "pr-4138": ("BOUNTY_PLAZA_1904", 11250, "実提出済・審査待ち (PR #4138 & /claim #1904 comment #6431844463)", "4138", 75.0),
-    "BOUNTY_PLAZA_1904": ("BOUNTY_PLAZA_1904", 11250, "実提出済・審査待ち (PR #4138 & /claim #1904 comment #6431844463)", "4138", 75.0),
-    "3922": ("MISAKANET_3901", 0, "実提出済・審査待ち (PR #3922, Intake #3921 & comment #6431829472)", "3922", 0.0),
-    "pr-3922": ("MISAKANET_3901", 0, "実提出済・審査待ち (PR #3922, Intake #3921 & comment #6431829472)", "3922", 0.0),
-    "MISAKANET_3901": ("MISAKANET_3901", 0, "実提出済・審査待ち (PR #3922, Intake #3921 & comment #6431829472)", "3922", 0.0),
-}
+# マネーフローのバケット（絶対に混ぜない）
+BUCKET_EXISTING = "existing"   # 元から保有しているポイント残高
+BUCKET_SUBS     = "subs"       # 解約による固定費削減
 
-DEFAULT_GATES = [
-    (
-        "gate-google-ai-pro",
-        "Google AI Pro Trial (¥2,900/mo) 解約・課金停止ガード",
-        "解約・決済境界",
-        "hold",
-        "# [承認後実行] Google Play / Google One 定期購入解約ページを開き、次回更新日前に解約手続きを実行",
-        34800,
-        "ZOMBIE-010-SUBSCRIPTION_LEAK_GUARD",
-        5,
-    ),
-    (
-        "gate-olive-welkatsu",
-        "Olive Vポイント 40,000pt → WAON POINT 等価交換（ウエル活1.5倍準備）",
-        "ポイント交換境界",
-        "hold",
-        "# [承認後実行] Vpass / VポイントPayアプリにて WAON POINT 40,000pt 即時等価交換ルートを実行（¥60,000相当化）",
-        60000,
-        "ZOMBIE-009-POINT_BOOST_ARBITRAGE",
-        1,
-    ),
-    (
-        "gate-l2-airdrop-sig",
-        "Monad / MegaETH / Berachain Testnet (0円Faucet・公開アドレス登録)",
-        "署名・規約境界",
-        "hold",
-        "# [承認後実行] 公開EVMアドレスのみを用い、秘密鍵非接触で0円Testnet Faucet取得ジョブをキュー投入",
-        15000,
-        "ZOMBIE-006-L2_BASE_ARBITRUM_CLAIM",
-        4,
-    ),
+# 着金ステータス
+ST_PENDING  = "pending_review"   # 提出済・審査待ち（未着金）
+ST_LANDED   = "landed"           # 口座に着金済（実着金）
+ST_REJECTED = "rejected"
+ST_HOLD     = "gate_hold"
+
+# ---------------------------------------------------------------------
+# シードデータ（水増しゼロの初期値）
+# ---------------------------------------------------------------------
+SEED_STATE = [
+    ("existing_olive_yen",     60000.0, "三井住友カード Olive 特典 40,000pt (ウエル活1.5倍換算) / 2026-11-30 付与予定", BUCKET_EXISTING),
+    ("existing_rakuten_yen",   52089.0, "楽天ポイント保有残高 / アカウントロック解除 Case 81334359 / 本人確認書類添付待ち", BUCKET_EXISTING),
+    ("existing_beams_yen",     23732.0, "BEAMS CLUB ポイント残高", BUCKET_EXISTING),
+    ("existing_mynb_yen",       1405.0, "myNB ポイント残高", BUCKET_EXISTING),
+    ("subs_google_ai_pro_yen",  2900.0, "Google AI Pro (5TB) 月額 / Apple ID経由 / 注文ID MMGH3D5MXX / 更新 2026-11-18", BUCKET_SUBS),
+    ("subs_sofmap_yen",          758.0, "SOFMAP TEIKI EKIMU 月額長期保証プランM / 毎月1日決済 / 10-31までに解約", BUCKET_SUBS),
 ]
 
+SEED_PAYOUTS = [
+    # (source, title, url, amount_yen, status, note)
+    ("algora", "bounty-plaza #1904: Stellar retry/backoff knobs ($75 USDC)",
+     "https://github.com/zhangjiayang6835-cyber/bounty-plaza/pull/4138",
+     11250.0, ST_PENDING, "Algoraエスクローなし野良repo / マージ&着金まで確定0円。Issue #1904 が正"),
+    ("misakanet", "MisakaNet #3901: lesson_gate.py missing-PyYAML cascade",
+     "https://github.com/Ikalus1988/MisakaNet/pull/3922",
+     0.0, ST_PENDING, "直接金銭報酬なし / fork初回PRでworkflow承認待ち / needs-human-review"),
+]
 
-def now_jst() -> str:
-    tz = datetime.timezone(datetime.timedelta(hours=9))
-    return datetime.datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S JST")
+SEED_GATES = [
+    ("gate_sofmap_cancel",        "SOFMAP TEIKI EKIMU 解約",           "open", "0077-78-9988 または会員ページ / 10-31までに解約で翌月以降0円", "2026-10-31"),
+    ("gate_google_ai_pro_cancel", "Google AI Pro (5TB) 解約",          "open", "Mac システム設定 > Apple Account > メディアと購入 > サブスクリプション / 注文ID MMGH3D5MXX", "2026-11-18"),
+    ("gate_rakuten_unlock",       "楽天アカウントロック解除",          "open", "Case 81334359 / 返信下書き draft_id r8345770108746311809 作成済 / 本人確認書類添付", ""),
+    ("gate_olive_grant",          "Olive 特典 40,000pt 付与確認",      "open", "2026-11-30 付与予定 / 付与確認後に existing へ反映", "2026-11-30"),
+    ("gate_rog_2fa",              "ROG Chrome 2FA 手動突破",           "open", "WAITING_2FA で停止したら人が1回だけ通す", ""),
+]
 
+# ---------------------------------------------------------------------
+# DB
+# ---------------------------------------------------------------------
+_DB_LOCK = threading.RLock()
 
-def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH), timeout=15.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    return conn
-
-
-def init_fullstack_schema() -> None:
-    with DB_LOCK:
-        conn = get_conn()
-        cur = conn.cursor()
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS approval_gates (
-                gate_id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                boundary_type TEXT NOT NULL,
-                state TEXT NOT NULL DEFAULT 'hold',
-                command_text TEXT NOT NULL,
-                impact_yen INTEGER NOT NULL DEFAULT 0,
-                assigned_bot_code TEXT NOT NULL,
-                target_id INTEGER,
-                updated_by TEXT NOT NULL DEFAULT 'system',
-                updated_at TEXT NOT NULL
-            )
-            """
-        )
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS deck_gates (
-                gate_id TEXT PRIMARY KEY,
-                state TEXT NOT NULL,
-                cmd_text TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-            """
-        )
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS deck_payouts (
-                pr_id TEXT PRIMARY KEY,
-                landed INTEGER NOT NULL DEFAULT 0,
-                yen INTEGER NOT NULL DEFAULT 0,
-                usd REAL NOT NULL DEFAULT 0.0,
-                updated_at TEXT NOT NULL
-            )
-            """
-        )
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS bot_execution_queue (
-                queue_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                action_type TEXT NOT NULL,
-                target_key TEXT NOT NULL,
-                assigned_bot_code TEXT NOT NULL,
-                queue_status TEXT NOT NULL,
-                payload_json TEXT NOT NULL,
-                db_effect_summary TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                executed_at TEXT
-            )
-            """
-        )
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS dashboard_action_audit (
-                audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                endpoint TEXT NOT NULL,
-                action TEXT NOT NULL,
-                target_key TEXT NOT NULL,
-                before_json TEXT NOT NULL,
-                after_json TEXT NOT NULL,
-                queue_id INTEGER,
-                client_source TEXT,
-                recorded_at TEXT NOT NULL
-            )
-            """
-        )
-        ts = now_jst()
-        for gid, title, btype, state, cmd, impact, bot_code, tid in DEFAULT_GATES:
-            cur.execute(
-                """
-                INSERT OR IGNORE INTO approval_gates
-                (gate_id, title, boundary_type, state, command_text, impact_yen, assigned_bot_code, target_id, updated_by, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'init_seed', ?)
-                """,
-                (gid, title, btype, state, cmd, impact, bot_code, tid, ts),
-            )
-            cur.execute(
-                "UPDATE approval_gates SET assigned_bot_code = ? WHERE gate_id = ?",
-                (bot_code, gid),
-            )
-            cur.execute(
-                """
-                INSERT OR IGNORE INTO deck_gates (gate_id, state, cmd_text, updated_at)
-                VALUES (?, ?, ?, ?)
-                """,
-                (gid, state, cmd, ts),
-            )
-        cur.execute(
-            """
-            INSERT OR IGNORE INTO deck_payouts (pr_id, landed, yen, usd, updated_at)
-            VALUES ('4138', 0, 11250, 75.0, ?)
-            """,
-            (ts,),
-        )
-        conn.commit()
-        conn.close()
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS cfo_state (
+    key        TEXT PRIMARY KEY,
+    value      REAL NOT NULL DEFAULT 0,
+    label      TEXT DEFAULT '',
+    bucket     TEXT DEFAULT 'meta',
+    updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS deck_payouts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    source     TEXT,
+    title      TEXT,
+    url        TEXT,
+    amount_yen REAL NOT NULL DEFAULT 0,
+    status     TEXT NOT NULL DEFAULT 'pending_review',
+    note       TEXT DEFAULT '',
+    created_at TEXT,
+    updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS deck_gates (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    gate_key   TEXT UNIQUE,
+    label      TEXT,
+    status     TEXT NOT NULL DEFAULT 'open',
+    detail     TEXT DEFAULT '',
+    deadline   TEXT DEFAULT '',
+    updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS job_runs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    action      TEXT,
+    status      TEXT,
+    started_at  TEXT,
+    finished_at TEXT,
+    log         TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS action_log (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts      TEXT,
+    action  TEXT,
+    payload TEXT,
+    result  TEXT
+);
+CREATE TABLE IF NOT EXISTS rog_events (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts      TEXT,
+    task_id TEXT,
+    site    TEXT,
+    status  TEXT,
+    detail  TEXT
+);
+"""
 
 
-def fetch_full_state(conn: sqlite3.Connection) -> dict:
-    cur = conn.cursor()
+def now_iso() -> str:
+    return datetime.now(JST).isoformat(timespec="seconds")
 
-    cur.execute(
-        """
-        SELECT
-            COALESCE(SUM(actual_landed_yen), 0) AS actual_landed_yen,
-            COALESCE(SUM(submitted_pending_yen), 0) AS submitted_pending_yen,
-            COALESCE(SUM(existing_balance_yen), 0) AS existing_balance_yen
-        FROM realized_ledger
-        """
-    )
-    kpi_row = dict(cur.fetchone())
 
-    cur.execute("SELECT * FROM realized_ledger ORDER BY rowid ASC")
-    ledger_rows = []
-    for r in cur.fetchall():
-        d = dict(r)
-        iid = d.get("id") or d.get("item_id") or ""
-        title = d.get("item_name") or d.get("title") or ""
-        purl = d.get("proof_url") or d.get("evidence_url_or_path") or ""
-        uat = d.get("updated_at") or d.get("recorded_at") or ""
-        d["id"] = iid
-        d["item_id"] = iid
-        d["item_name"] = title
-        d["title"] = title
-        d["proof_url"] = purl
-        d["evidence_url_or_path"] = purl
-        d["updated_at"] = uat
-        d["recorded_at"] = uat
-        ledger_rows.append(d)
+def db():
+    con = sqlite3.connect(DB_PATH, timeout=30)
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA busy_timeout=30000")
+    return con
 
-    cur.execute(
-        """
-        SELECT gate_id, title, boundary_type, state, command_text, impact_yen,
-               assigned_bot_code, target_id, updated_by, updated_at
-        FROM approval_gates
-        ORDER BY rowid ASC
-        """
-    )
-    approval_gates = [dict(r) for r in cur.fetchall()]
 
-    cur.execute("SELECT gate_id, state, cmd_text, updated_at FROM deck_gates")
-    deck_gates_map = {r["gate_id"]: dict(r) for r in cur.fetchall()}
+def init_db(force_seed: bool = True) -> None:
+    os.makedirs(WORKSPACE, exist_ok=True)
+    with _DB_LOCK, db() as con:
+        con.executescript(SCHEMA)
+        if force_seed:
+            for key, val, label, bucket in SEED_STATE:
+                con.execute(
+                    "INSERT OR IGNORE INTO cfo_state(key,value,label,bucket,updated_at) VALUES(?,?,?,?,?)",
+                    (key, val, label, bucket, now_iso()),
+                )
+            for src, title, url, amt, st, note in SEED_PAYOUTS:
+                row = con.execute("SELECT id FROM deck_payouts WHERE url=?", (url,)).fetchone()
+                if not row:
+                    con.execute(
+                        "INSERT INTO deck_payouts(source,title,url,amount_yen,status,note,created_at,updated_at)"
+                        " VALUES(?,?,?,?,?,?,?,?)",
+                        (src, title, url, amt, st, note, now_iso(), now_iso()),
+                    )
+            for gk, label, st, detail, dl in SEED_GATES:
+                con.execute(
+                    "INSERT OR IGNORE INTO deck_gates(gate_key,label,status,detail,deadline,updated_at)"
+                    " VALUES(?,?,?,?,?,?)",
+                    (gk, label, st, detail, dl, now_iso()),
+                )
+        con.commit()
 
-    gates_dict = {}
-    gate_states = {}
-    for g in approval_gates:
-        gid = g["gate_id"]
-        dg = deck_gates_map.get(gid)
-        st = g["state"]
-        txt = (dg["cmd_text"] if dg and dg.get("cmd_text") else g["command_text"])
-        gates_dict[gid] = {
-            "state": st,
-            "text": txt,
-            "title": g["title"],
-            "assigned_bot_code": g["assigned_bot_code"],
-            "updated_at": g["updated_at"],
-        }
-        gate_states[gid] = {
-            "state": st,
-            "command_text": txt,
-            "updated_at": g["updated_at"],
-            "assigned_bot_code": g["assigned_bot_code"],
-        }
 
-    cur.execute("SELECT pr_id, landed, yen, usd, updated_at FROM deck_payouts")
-    deck_payouts = {
-        r["pr_id"]: {
-            "landed": bool(r["landed"]),
-            "yen": r["yen"],
-            "usd": r["usd"],
-            "updated_at": r["updated_at"],
-        }
-        for r in cur.fetchall()
-    }
-
-    payout_states = {}
-    for row in ledger_rows:
-        iid = row["item_id"]
-        is_landed = (row["actual_landed_yen"] or 0) > 0
-        payout_states[iid] = is_landed
-        if iid == "BOUNTY_PLAZA_1904":
-            payout_states["pr-4138"] = is_landed
-            payout_states["4138"] = is_landed
-            deck_payouts["4138"] = {
-                "landed": is_landed,
-                "yen": 11250,
-                "usd": 75.0,
-                "updated_at": row["recorded_at"],
-            }
-        elif iid == "MISAKANET_3901":
-            payout_states["pr-3922"] = is_landed
-            payout_states["3922"] = is_landed
-
-    cur.execute("SELECT * FROM harvest_targets ORDER BY id ASC")
-    targets = [dict(r) for r in cur.fetchall()]
-
-    cur.execute("SELECT * FROM spawned_worker_bots ORDER BY bot_id ASC")
-    bots = [dict(r) for r in cur.fetchall()]
-
-    cur.execute(
-        """
-        SELECT queue_id, action_type, target_key, assigned_bot_code, queue_status,
-               payload_json, db_effect_summary, created_at, executed_at
-        FROM bot_execution_queue
-        ORDER BY queue_id DESC
-        LIMIT 25
-        """
-    )
-    queue_items = [dict(r) for r in cur.fetchall()]
-
-    cur.execute(
-        """
-        SELECT pr_url, repo_full_name, pr_number, state, mergeable, ci_summary,
-               review_comments_count, action_needed, stylometry_profile, last_checked_at
-        FROM pr_review_watcher_state
-        ORDER BY pr_number DESC
-        """
-    )
-    watched_prs = [dict(r) for r in cur.fetchall()]
-
-    cur.execute("SELECT * FROM global_oss_engines")
-    oss_engines = [dict(r) for r in cur.fetchall()]
-
-    cur.execute("SELECT * FROM global_bounty_candidates ORDER BY ev_per_competitor DESC")
-    bounty_candidates = [dict(r) for r in cur.fetchall()]
-
-    cur.execute("SELECT * FROM repo_reputation_memory")
-    repo_rep = [dict(r) for r in cur.fetchall()]
-
-    campaign_sessions = []
+def log_job(action: str, status: str, text: str = "") -> None:
+    line = f"[{now_iso()}] {action} :: {status} :: {text}".rstrip()
     try:
-        cur.execute("SELECT * FROM campaign_gui_sessions")
-        campaign_sessions = [dict(r) for r in cur.fetchall()]
+        with open(JOB_LOG_PATH, "a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+    except Exception:
+        pass
+    try:
+        with _DB_LOCK, db() as con:
+            con.execute(
+                "INSERT INTO job_runs(action,status,started_at,finished_at,log) VALUES(?,?,?,?,?)",
+                (action, status, now_iso(), now_iso(), text[:4000]),
+            )
+            con.commit()
     except Exception:
         pass
 
-    cur.execute("SELECT COUNT(*) AS cnt FROM sqlite_master WHERE type='table'")
-    table_count = cur.fetchone()["cnt"]
 
+def log_action(action: str, payload: dict, result: dict) -> None:
+    try:
+        with _DB_LOCK, db() as con:
+            con.execute(
+                "INSERT INTO action_log(ts,action,payload,result) VALUES(?,?,?,?)",
+                (now_iso(), action, json.dumps(payload, ensure_ascii=False)[:2000],
+                 json.dumps(result, ensure_ascii=False)[:4000]),
+            )
+            con.commit()
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------
+# 集計（実着金 / 審査待ち / 既存残高 / 固定費削減 を厳密分離）
+# ---------------------------------------------------------------------
+def money_summary() -> dict:
+    with _DB_LOCK, db() as con:
+        landed = con.execute(
+            "SELECT COALESCE(SUM(amount_yen),0) AS s FROM deck_payouts WHERE status=?",
+            (ST_LANDED,)).fetchone()["s"]
+        pending = con.execute(
+            "SELECT COALESCE(SUM(amount_yen),0) AS s FROM deck_payouts WHERE status=?",
+            (ST_PENDING,)).fetchone()["s"]
+        hold = con.execute(
+            "SELECT COALESCE(SUM(amount_yen),0) AS s FROM deck_payouts WHERE status=?",
+            (ST_HOLD,)).fetchone()["s"]
+        existing = con.execute(
+            "SELECT COALESCE(SUM(value),0) AS s FROM cfo_state WHERE bucket=?",
+            (BUCKET_EXISTING,)).fetchone()["s"]
+        subs = con.execute(
+            "SELECT COALESCE(SUM(value),0) AS s FROM cfo_state WHERE bucket=?",
+            (BUCKET_SUBS,)).fetchone()["s"]
     return {
-        "ok": True,
-        "server": "harvest_api_server_sqlite_v2.9",
-        "db_path": str(DB_PATH),
-        "table_count": table_count,
-        "timestamp": now_jst(),
-        "kpi": {
-            "actual_landed_yen": int(kpi_row["actual_landed_yen"] or 0),
-            "actual_landed_usd": round(float(kpi_row["actual_landed_yen"] or 0) / 150.0, 2),
-            "submitted_pending_yen": int(kpi_row["submitted_pending_yen"] or 0),
-            "submitted_pending_usd": round(float(kpi_row["submitted_pending_yen"] or 0) / 150.0, 2),
-            "existing_balance_yen": int(kpi_row["existing_balance_yen"] or 0),
-        },
-        "gates": gates_dict,
-        "gate_states": gate_states,
-        "approval_gates": approval_gates,
-        "payouts": deck_payouts,
-        "payout_states": payout_states,
-        "realized_ledger": ledger_rows,
-        "harvest_targets": targets,
-        "spawned_worker_bots": bots,
-        "bot_execution_queue": queue_items,
-        "pr_review_watcher_state": watched_prs,
-        "global_oss_engines": oss_engines,
-        "global_bounty_candidates": bounty_candidates,
-        "repo_reputation_memory": repo_rep,
-        "campaign_gui_sessions": campaign_sessions,
+        "actual_landed_yen": float(landed),
+        "submitted_pending_yen": float(pending),
+        "gate_hold_yen": float(hold),
+        "existing_balance_yen": float(existing),
+        "monthly_cut_yen": float(subs),
+        "annual_cut_yen": float(subs) * 12.0,
     }
 
 
-def execute_action(payload: dict, client_source: str = "web-dashboard") -> dict:
-    action = str(payload.get("action") or "").strip()
-    ts = now_jst()
+def build_state() -> dict:
+    with _DB_LOCK, db() as con:
+        payouts = [dict(r) for r in con.execute(
+            "SELECT * FROM deck_payouts ORDER BY (status=?) DESC, amount_yen DESC, id DESC",
+            (ST_PENDING,)).fetchall()]
+        gates = [dict(r) for r in con.execute(
+            "SELECT * FROM deck_gates ORDER BY (status='open') DESC, deadline='' , deadline ASC, id ASC").fetchall()]
+        jobs = [dict(r) for r in con.execute(
+            "SELECT * FROM job_runs ORDER BY id DESC LIMIT 40").fetchall()]
+        logs = [dict(r) for r in con.execute(
+            "SELECT * FROM action_log ORDER BY id DESC LIMIT 60").fetchall()]
+        state_rows = [dict(r) for r in con.execute(
+            "SELECT * FROM cfo_state ORDER BY bucket, id" if False else
+            "SELECT * FROM cfo_state ORDER BY bucket, key").fetchall()]
+        rog = [dict(r) for r in con.execute(
+            "SELECT * FROM rog_events ORDER BY id DESC LIMIT 40").fetchall()]
 
-    with DB_LOCK:
-        conn = get_conn()
-        cur = conn.cursor()
+    return {
+        "ok": True,
+        "version": VERSION,
+        "now": now_iso(),
+        "money": money_summary(),
+        "payouts": payouts,
+        "gates": gates,
+        "state_items": state_rows,
+        "jobs": jobs,
+        "logs": logs,
+        "rog_events": rog,
+        "quota": {
+            "grok_bot_quota_pct": 0.0,
+            "note": "チャット/Task/SendToAgent 未使用。司令塔は VM master daemon + Git + ROG agy。",
+        },
+        "wiring": {
+            "db": DB_PATH,
+            "brain_repo": BRAIN_REPO,
+            "brain_repo_exists": os.path.isdir(BRAIN_REPO),
+            "miner_exists": os.path.isfile(MINER_SCRIPT),
+            "rog_queue": os.path.join(BRAIN_REPO, ROG_QUEUE_REL),
+        },
+    }
+
+
+# ---------------------------------------------------------------------
+# Git ブリッジ（MCP不要：VM -> brain repo -> ROG dot-poll）
+# ---------------------------------------------------------------------
+def git(args, cwd=BRAIN_REPO, timeout=180):
+    return subprocess.run(["git", "-C", cwd] + args,
+                          capture_output=True, text=True, timeout=timeout)
+
+
+def brain_push(message: str) -> dict:
+    if not os.path.isdir(os.path.join(BRAIN_REPO, ".git")):
+        return {"ok": False, "reason": f"brain repo not found: {BRAIN_REPO}"}
+    git(["add", "-A"])
+    st = git(["status", "--porcelain"])
+    if not st.stdout.strip():
+        return {"ok": True, "pushed": False, "reason": "no changes"}
+    c = git(["commit", "-m", message])
+    if c.returncode != 0:
+        return {"ok": False, "reason": c.stdout + c.stderr}
+    p = git(["push", "origin", "HEAD"])
+    return {"ok": p.returncode == 0, "pushed": p.returncode == 0,
+            "detail": (p.stdout + p.stderr).strip()[:800]}
+
+
+ROG_SITE_PRESETS = {
+    "vpass": {
+        "label": "Vpass (三井住友カード) ログイン/特典確認",
+        "url": "https://vpass.ne.jp/",
+        "steps": [
+            {"type": "navigate", "url": "https://vpass.ne.jp/"},
+            {"type": "wait", "ms": 3500},
+            {"type": "screenshot", "name": "vpass_top"},
+            {"type": "detect2fa", "selectors": ["input[type=password]", "input[name*=otp]"]},
+            {"type": "eval", "js": "document.title"},
+            {"type": "screenshot", "name": "vpass_after"},
+        ],
+    },
+    "rakuten": {
+        "label": "楽天 ログイン/ポイント残高確認 (Case 81334359)",
+        "url": "https://www.rakuten.co.jp/",
+        "steps": [
+            {"type": "navigate", "url": "https://www.rakuten.co.jp/"},
+            {"type": "wait", "ms": 4000},
+            {"type": "screenshot", "name": "rakuten_top"},
+            {"type": "click_text", "text": "ログイン"},
+            {"type": "wait", "ms": 3000},
+            {"type": "detect2fa", "selectors": ["input[type=password]", "input[name*=code]"]},
+            {"type": "screenshot", "name": "rakuten_after"},
+        ],
+    },
+    "ion": {
+        "label": "イオン ログイン/WAON確認",
+        "url": "https://www.aeon.com/",
+        "steps": [
+            {"type": "navigate", "url": "https://www.aeon.com/"},
+            {"type": "wait", "ms": 4000},
+            {"type": "screenshot", "name": "aeon_top"},
+            {"type": "click_text", "text": "ログイン"},
+            {"type": "wait", "ms": 3000},
+            {"type": "detect2fa", "selectors": ["input[type=password]"]},
+            {"type": "screenshot", "name": "aeon_after"},
+        ],
+    },
+    "zozo": {
+        "label": "ZOZO (Akamai 403 突破確認 / 実Chrome必須)",
+        "url": "https://zozo.jp/",
+        "steps": [
+            {"type": "navigate", "url": "https://zozo.jp/"},
+            {"type": "wait", "ms": 5000},
+            {"type": "eval", "js": "document.title"},
+            {"type": "screenshot", "name": "zozo_top"},
+            {"type": "detect2fa", "selectors": ["input[type=password]"]},
+        ],
+    },
+}
+
+
+def dispatch_rog_gui(payload: dict) -> dict:
+    sites = payload.get("sites") or list(ROG_SITE_PRESETS.keys())
+    sites = [s for s in sites if s in ROG_SITE_PRESETS]
+    if not sites:
+        return {"ok": False, "reason": "no valid sites", "valid": list(ROG_SITE_PRESETS.keys())}
+
+    queue_path = os.path.join(BRAIN_REPO, ROG_QUEUE_REL)
+    os.makedirs(os.path.dirname(queue_path), exist_ok=True)
+    if os.path.isfile(queue_path):
         try:
-            if action in ("set_gate", "approve_gate", "update_gate"):
-                gate_id = str(payload.get("gate_id") or payload.get("id") or "").strip()
-                new_state = str(payload.get("state") or payload.get("status") or "hold").strip().lower()
-                if new_state not in ("approve", "hold", "cancel"):
-                    raise ValueError(f"Invalid gate state: {new_state}")
+            with open(queue_path, encoding="utf-8") as fh:
+                queue = json.load(fh)
+        except Exception:
+            queue = {"version": 1, "tasks": []}
+    else:
+        queue = {"version": 1, "tasks": []}
+    queue.setdefault("tasks", [])
 
-                cur.execute("SELECT * FROM approval_gates WHERE gate_id = ?", (gate_id,))
-                row = cur.fetchone()
-                if not row:
-                    raise ValueError(f"Unknown gate_id: {gate_id}")
-                before_obj = dict(row)
+    created = []
+    for site in sites:
+        preset = ROG_SITE_PRESETS[site]
+        task = {
+            "id": "rog-" + uuid.uuid4().hex[:12],
+            "site": site,
+            "label": preset["label"],
+            "url": preset["url"],
+            "steps": preset["steps"],
+            "status": "queued",
+            "created_at": now_iso(),
+            "note": payload.get("note", ""),
+            "engine": {"chrome_cdp_port": 9222, "agy_model": "gemini-3.8-flash"},
+        }
+        queue["tasks"].append(task)
+        created.append(task["id"])
 
-                cmd_text = str(payload.get("cmd_text") or payload.get("text") or "").strip()
-                if not cmd_text:
-                    if new_state == "approve":
-                        cmd_text = f"⚡ 承認済 (SQLite永続化 & Queue連動 @ {ts}): {before_obj['command_text']}"
-                    elif new_state == "cancel":
-                        cmd_text = f"🛑 停止・却下済 (SQLite永続化 @ {ts}): {before_obj['title']}"
-                    else:
-                        cmd_text = f"⏸ 保留中 (SQLite永続化 @ {ts}): {before_obj['title']}"
+    queue["tasks"] = queue["tasks"][-200:]
+    with open(queue_path, "w", encoding="utf-8") as fh:
+        json.dump(queue, fh, ensure_ascii=False, indent=2)
 
-                cur.execute(
-                    """
-                    UPDATE approval_gates
-                    SET state = ?, command_text = ?, updated_by = ?, updated_at = ?
-                    WHERE gate_id = ?
-                    """,
-                    (new_state, cmd_text, client_source, ts, gate_id),
-                )
-                cur.execute(
-                    """
-                    INSERT INTO deck_gates (gate_id, state, cmd_text, updated_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(gate_id) DO UPDATE SET
-                        state = excluded.state,
-                        cmd_text = excluded.cmd_text,
-                        updated_at = excluded.updated_at
-                    """,
-                    (gate_id, new_state, cmd_text, ts),
-                )
+    push = brain_push(f"chore(rog-queue): dispatch {len(created)} GUI task(s) [{','.join(sites)}]")
+    return {"ok": True, "queued": created, "sites": sites, "git": push}
 
-                target_id = before_obj.get("target_id")
-                if target_id:
-                    target_status = (
-                        "APPROVED_QUEUED"
-                        if new_state == "approve"
-                        else ("CANCELLED_BY_GATE" if new_state == "cancel" else "READY_MANUAL_DISPATCH")
-                    )
-                    cur.execute(
-                        "UPDATE harvest_targets SET status = ? WHERE id = ?",
-                        (target_status, target_id),
-                    )
 
-                bot_code = before_obj["assigned_bot_code"]
-                q_status = "QUEUED" if new_state == "approve" else ("CANCELLED" if new_state == "cancel" else "HELD")
-                effect_summary = (
-                    f"Gate {gate_id} -> {new_state.upper()} | Bot {bot_code} queue={q_status}"
-                )
-                cur.execute(
-                    """
-                    INSERT INTO bot_execution_queue
-                    (action_type, target_key, assigned_bot_code, queue_status, payload_json, db_effect_summary, created_at, executed_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        f"GATE_{new_state.upper()}",
-                        gate_id,
-                        bot_code,
-                        q_status,
-                        json.dumps(payload, ensure_ascii=False),
-                        effect_summary,
-                        ts,
-                        ts if new_state != "approve" else None,
-                    ),
-                )
-                queue_id = cur.lastrowid
+def ack_rog_results() -> dict:
+    """ROGがgit pushで戻した results/rog_result.json をSQLiteへ取り込む。"""
+    path = os.path.join(BRAIN_REPO, ROG_RESULT_REL)
+    if not os.path.isfile(path):
+        return {"ok": False, "reason": f"not found: {path}"}
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    items = data if isinstance(data, list) else data.get("results", [])
+    n = 0
+    with _DB_LOCK, db() as con:
+        for it in items:
+            con.execute(
+                "INSERT INTO rog_events(ts,task_id,site,status,detail) VALUES(?,?,?,?,?)",
+                (now_iso(), str(it.get("id", "")), str(it.get("site", "")),
+                 str(it.get("status", "unknown")), json.dumps(it, ensure_ascii=False)[:2000]))
+            n += 1
+        con.commit()
+    # キュー側を消費済みに更新
+    qpath = os.path.join(BRAIN_REPO, ROG_QUEUE_REL)
+    done_ids = {str(it.get("id")) for it in items}
+    if os.path.isfile(qpath):
+        try:
+            with open(qpath, encoding="utf-8") as fh:
+                q = json.load(fh)
+            for t in q.get("tasks", []):
+                if t.get("id") in done_ids:
+                    t["status"] = "acked"
+            with open(qpath, "w", encoding="utf-8") as fh:
+                json.dump(q, fh, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+    log_job("ack_rog_results", "ok", f"{n} events ingested")
+    return {"ok": True, "ingested": n}
 
-                cur.execute(
-                    """
-                    UPDATE spawned_worker_bots
-                    SET runs_completed = runs_completed + 1,
-                        last_status = ?,
-                        last_result_summary = ?,
-                        last_run_at = ?
-                    WHERE bot_code = ?
-                    """,
-                    (
-                        f"GATE_{new_state.upper()}_SYNCED",
-                        f"[POST /api/action] {gate_id} set to {new_state.upper()} (queue #{queue_id})",
-                        ts,
-                        bot_code,
-                    ),
-                )
 
-                cur.execute("SELECT * FROM approval_gates WHERE gate_id = ?", (gate_id,))
-                after_obj = dict(cur.fetchone())
-                cur.execute(
-                    """
-                    INSERT INTO dashboard_action_audit
-                    (endpoint, action, target_key, before_json, after_json, queue_id, client_source, recorded_at)
-                    VALUES ('/api/action', ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        action,
-                        gate_id,
-                        json.dumps(before_obj, ensure_ascii=False),
-                        json.dumps(after_obj, ensure_ascii=False),
-                        queue_id,
-                        client_source,
-                        ts,
-                    ),
-                )
-                conn.commit()
-                state_snapshot = fetch_full_state(conn)
-                return {
-                    "ok": True,
-                    "action": "set_gate",
-                    "gate_id": gate_id,
-                    "state": new_state,
-                    "cmd_text": cmd_text,
-                    "assigned_bot_code": bot_code,
-                    "queue_id": queue_id,
-                    "queue_status": q_status,
-                    "db_effect_summary": effect_summary,
-                    "timestamp": ts,
-                    "kpi": state_snapshot["kpi"],
-                    "gates": state_snapshot["gates"],
-                    "gate_states": state_snapshot["gate_states"],
-                    "bot_execution_queue": state_snapshot["bot_execution_queue"][:10],
-                }
+# ---------------------------------------------------------------------
+# ジョブ実行（Grok Botを介さずVM内スレッドで即実行）
+# ---------------------------------------------------------------------
+_RUNNING = {}
+_RUN_LOCK = threading.Lock()
 
-            elif action in ("toggle_payout", "mark_payout_landed", "set_payout"):
-                raw_id = str(
-                    payload.get("pr_id")
-                    or payload.get("item_id")
-                    or payload.get("pocket_id")
-                    or "4138"
-                ).strip()
-                item_id, default_yen, default_pending_status, pr_short_id, default_usd = POCKET_ALIAS_MAP.get(
-                    raw_id, (raw_id, 11250, "実提出済・審査待ち", "4138", 75.0)
-                )
 
-                cur.execute("PRAGMA table_info(realized_ledger)")
-                rl_cols = {c[1] for c in cur.fetchall()}
-                pk_col = "id" if "id" in rl_cols else "item_id"
-                ts_col = "updated_at" if "updated_at" in rl_cols else "recorded_at"
-                cur.execute(f"SELECT * FROM realized_ledger WHERE {pk_col} = ?", (item_id,))
-                row = cur.fetchone()
-                if not row:
-                    raise ValueError(f"Unknown ledger item_id: {item_id}")
-                before_obj = dict(row)
+def _spawn(name: str, fn) -> dict:
+    with _RUN_LOCK:
+        if _RUNNING.get(name):
+            return {"ok": True, "accepted": False, "reason": f"{name} already running"}
+        _RUNNING[name] = True
 
-                if "landed" in payload and payload["landed"] is not None:
-                    landed = bool(payload["landed"])
-                else:
-                    landed = (before_obj.get("actual_landed_yen") or 0) == 0
-
-                amount_yen = int(
-                    payload.get("yen")
-                    or payload.get("amount_yen")
-                    or before_obj.get("actual_landed_yen")
-                    or before_obj.get("submitted_pending_yen")
-                    or default_yen
-                )
-
-                if landed:
-                    new_actual = amount_yen
-                    new_pending = 0
-                    new_status = f"実着金確定済 (Mark Payout Landed @ {ts} / ¥{amount_yen:,})"
-                else:
-                    new_actual = 0
-                    new_pending = amount_yen
-                    new_status = default_pending_status
-
-                cur.execute(
-                    f"""
-                    UPDATE realized_ledger
-                    SET actual_landed_yen = ?,
-                        submitted_pending_yen = ?,
-                        status = ?,
-                        {ts_col} = ?
-                    WHERE {pk_col} = ?
-                    """,
-                    (new_actual, new_pending, new_status, ts, item_id),
-                )
-                cur.execute(
-                    """
-                    INSERT INTO deck_payouts (pr_id, landed, yen, usd, updated_at)
-                    VALUES (?, ?, ?, ?, ?)
-                    ON CONFLICT(pr_id) DO UPDATE SET
-                        landed = excluded.landed,
-                        yen = excluded.yen,
-                        usd = excluded.usd,
-                        updated_at = excluded.updated_at
-                    """,
-                    (pr_short_id, 1 if landed else 0, amount_yen, default_usd, ts),
-                )
-
-                bot_code = "ZOMBIE-001-BOUNTY_GH_60M_RUST"
-                q_status = "COMPLETED"
-                effect_summary = (
-                    f"Ledger {item_id} (PR #{pr_short_id}) -> landed={landed} "
-                    f"(actual_landed_yen=¥{new_actual:,}, submitted_pending_yen=¥{new_pending:,})"
-                )
-                cur.execute(
-                    """
-                    INSERT INTO bot_execution_queue
-                    (action_type, target_key, assigned_bot_code, queue_status, payload_json, db_effect_summary, created_at, executed_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        "PAYOUT_LANDED_CONFIRM" if landed else "PAYOUT_REVERT_PENDING",
-                        item_id,
-                        bot_code,
-                        q_status,
-                        json.dumps(payload, ensure_ascii=False),
-                        effect_summary,
-                        ts,
-                        ts,
-                    ),
-                )
-                queue_id = cur.lastrowid
-
-                cur.execute(
-                    """
-                    UPDATE spawned_worker_bots
-                    SET runs_completed = runs_completed + 1,
-                        last_status = ?,
-                        last_result_summary = ?,
-                        last_run_at = ?
-                    WHERE bot_code = ?
-                    """,
-                    (
-                        "PAYOUT_LANDED_SYNC" if landed else "PAYOUT_PENDING_SYNC",
-                        effect_summary,
-                        ts,
-                        bot_code,
-                    ),
-                )
-
-                cur.execute(f"SELECT * FROM realized_ledger WHERE {pk_col} = ?", (item_id,))
-                after_obj = dict(cur.fetchone())
-                cur.execute(
-                    """
-                    INSERT INTO dashboard_action_audit
-                    (endpoint, action, target_key, before_json, after_json, queue_id, client_source, recorded_at)
-                    VALUES ('/api/action', ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        action,
-                        item_id,
-                        json.dumps(before_obj, ensure_ascii=False),
-                        json.dumps(after_obj, ensure_ascii=False),
-                        queue_id,
-                        client_source,
-                        ts,
-                    ),
-                )
-                conn.commit()
-                state_snapshot = fetch_full_state(conn)
-                return {
-                    "ok": True,
-                    "action": "toggle_payout",
-                    "item_id": item_id,
-                    "pr_id": pr_short_id,
-                    "landed": landed,
-                    "actual_landed_yen": new_actual,
-                    "submitted_pending_yen": new_pending,
-                    "queue_id": queue_id,
-                    "db_effect_summary": effect_summary,
-                    "timestamp": ts,
-                    "kpi": state_snapshot["kpi"],
-                    "payouts": state_snapshot["payouts"],
-                    "payout_states": state_snapshot["payout_states"],
-                    "bot_execution_queue": state_snapshot["bot_execution_queue"][:10],
-                }
-
-            elif action in ("complete_task", "update_target"):
-                raw_tid = str(payload.get("target_id") or payload.get("id") or "").strip()
-                new_status = str(payload.get("status") or "COMPLETED_CONFIRMED").strip()
-                cur.execute("SELECT * FROM harvest_targets WHERE id = ? OR CAST(rowid AS TEXT) = ?", (raw_tid, raw_tid))
-                row = cur.fetchone()
-                if not row:
-                    raise ValueError(f"Unknown harvest_targets.id: {raw_tid}")
-                before_obj = dict(row)
-                target_id = before_obj["id"]
-
-                cur.execute(
-                    "UPDATE harvest_targets SET status = ? WHERE id = ?",
-                    (new_status, target_id),
-                )
-                bot_code = str(payload.get("bot_code") or "ZOMBIE-009-POINT_BOOST_ARBITRAGE")
-                tname = before_obj.get('name') or before_obj.get('target_name') or before_obj.get('title') or f'Target-{target_id}'
-                effect_summary = f"Target #{target_id} ({tname}) -> {new_status}"
-                cur.execute(
-                    """
-                    INSERT INTO bot_execution_queue
-                    (action_type, target_key, assigned_bot_code, queue_status, payload_json, db_effect_summary, created_at, executed_at)
-                    VALUES ('TASK_COMPLETE', ?, ?, 'COMPLETED', ?, ?, ?, ?)
-                    """,
-                    (
-                        f"TARGET-{target_id}",
-                        bot_code,
-                        json.dumps(payload, ensure_ascii=False),
-                        effect_summary,
-                        ts,
-                        ts,
-                    ),
-                )
-                queue_id = cur.lastrowid
-
-                cur.execute(
-                    """
-                    UPDATE spawned_worker_bots
-                    SET runs_completed = runs_completed + 1,
-                        last_status = 'TASK_COMPLETED_SYNC',
-                        last_result_summary = ?,
-                        last_run_at = ?
-                    WHERE bot_code = ?
-                    """,
-                    (effect_summary, ts, bot_code),
-                )
-
-                cur.execute("SELECT * FROM harvest_targets WHERE id = ?", (target_id,))
-                after_obj = dict(cur.fetchone())
-                cur.execute(
-                    """
-                    INSERT INTO dashboard_action_audit
-                    (endpoint, action, target_key, before_json, after_json, queue_id, client_source, recorded_at)
-                    VALUES ('/api/action', ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        action,
-                        f"TARGET-{target_id}",
-                        json.dumps(before_obj, ensure_ascii=False),
-                        json.dumps(after_obj, ensure_ascii=False),
-                        queue_id,
-                        client_source,
-                        ts,
-                    ),
-                )
-                conn.commit()
-                state_snapshot = fetch_full_state(conn)
-                return {
-                    "ok": True,
-                    "action": "complete_task",
-                    "target_id": target_id,
-                    "status": new_status,
-                    "queue_id": queue_id,
-                    "db_effect_summary": effect_summary,
-                    "timestamp": ts,
-                    "kpi": state_snapshot["kpi"],
-                    "harvest_targets": state_snapshot["harvest_targets"],
-                    "bot_execution_queue": state_snapshot["bot_execution_queue"][:10],
-                }
-
-            elif action in ("dispatch_queue", "trigger_queue", "run_bot"):
-                target_bot = str(payload.get("bot_code") or "ALL_10_BOTS").strip()
-                cur.execute(
-                    "UPDATE bot_execution_queue SET queue_status = 'COMPLETED', executed_at = ? WHERE queue_status = 'QUEUED'",
-                    (ts,),
-                )
-                flushed = cur.rowcount
-                if target_bot == "ALL_10_BOTS":
-                    cur.execute(
-                        """
-                        UPDATE spawned_worker_bots
-                        SET runs_completed = runs_completed + 1,
-                            last_status = 'ACTIVE_QUEUE_SYNCED',
-                            last_result_summary = ?,
-                            last_run_at = ?
-                        """,
-                        (f"[Queue Dispatch] 全ボット同期スイープ完了 (flushed={flushed} @ {ts})", ts),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        UPDATE spawned_worker_bots
-                        SET runs_completed = runs_completed + 1,
-                            last_status = 'ACTIVE_QUEUE_SYNCED',
-                            last_result_summary = ?,
-                            last_run_at = ?
-                        WHERE bot_code = ?
-                        """,
-                        (f"[Queue Dispatch] 単体ボット実行完了 (flushed={flushed} @ {ts})", ts, target_bot),
-                    )
-                effect_summary = f"Dispatched execution queue to {target_bot} (flushed_queued={flushed})"
-                cur.execute(
-                    """
-                    INSERT INTO bot_execution_queue
-                    (action_type, target_key, assigned_bot_code, queue_status, payload_json, db_effect_summary, created_at, executed_at)
-                    VALUES ('DISPATCH_BOT_SWEEP', ?, ?, 'COMPLETED', ?, ?, ?, ?)
-                    """,
-                    (
-                        target_bot,
-                        target_bot,
-                        json.dumps(payload, ensure_ascii=False),
-                        effect_summary,
-                        ts,
-                        ts,
-                    ),
-                )
-                queue_id = cur.lastrowid
-                conn.commit()
-                state_snapshot = fetch_full_state(conn)
-                return {
-                    "ok": True,
-                    "action": "dispatch_queue",
-                    "target_bot": target_bot,
-                    "flushed_queued": flushed,
-                    "queue_id": queue_id,
-                    "db_effect_summary": effect_summary,
-                    "timestamp": ts,
-                    "spawned_worker_bots": state_snapshot["spawned_worker_bots"],
-                    "bot_execution_queue": state_snapshot["bot_execution_queue"][:10],
-                }
-            else:
-                raise ValueError(f"Unsupported action: {action}")
+    def _wrap():
+        try:
+            log_job(name, "start")
+            out = fn()
+            log_job(name, "ok", json.dumps(out, ensure_ascii=False)[:3000] if out else "")
+        except Exception:
+            log_job(name, "error", traceback.format_exc()[-3000:])
         finally:
-            conn.close()
+            with _RUN_LOCK:
+                _RUNNING[name] = False
+
+    threading.Thread(target=_wrap, name=name, daemon=True).start()
+    return {"ok": True, "accepted": True, "job": name}
 
 
-class HarvestAPIHandler(BaseHTTPRequestHandler):
-    server_version = "HarvestFullStackDB/2.9"
+def job_run_algora_scan(payload: dict) -> dict:
+    def _run():
+        args = [sys.executable, MINER_SCRIPT, "--json"]
+        if payload.get("limit"):
+            args += ["--limit", str(int(payload["limit"]))]
+        if payload.get("max_prs"):
+            args += ["--max-prs", str(int(payload["max_prs"]))]
+        if payload.get("repo_filter"):
+            args += ["--repo-filter", str(payload["repo_filter"])]
+        if payload.get("dry_run"):
+            args.append("--dry-run")
+        p = subprocess.run(args, capture_output=True, text=True, timeout=7200, cwd=WORKSPACE)
+        log_job("algora_scan.stdout", "ok", p.stdout[-3000:])
+        if p.returncode != 0:
+            log_job("algora_scan.stderr", "error", p.stderr[-3000:])
+        return {"returncode": p.returncode, "stdout_tail": p.stdout[-1500:]}
 
-    def log_message(self, fmt: str, *args) -> None:
-        sys.stderr.write(f"[{now_jst()}] {self.client_address[0]} {fmt % args}\n")
+    return _spawn("run_algora_scan", _run)
 
-    def _send_json(self, status: int, data: dict) -> None:
-        raw = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(raw)))
-        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+
+# ---------------------------------------------------------------------
+# アクションルーティング
+# ---------------------------------------------------------------------
+def act_update_gate(payload: dict) -> dict:
+    gk = payload.get("gate_key")
+    status = payload.get("status", "open")
+    if not gk:
+        return {"ok": False, "reason": "gate_key required"}
+    with _DB_LOCK, db() as con:
+        con.execute("UPDATE deck_gates SET status=?, detail=COALESCE(?,detail), updated_at=? WHERE gate_key=?",
+                    (status, payload.get("detail"), now_iso(), gk))
+        con.commit()
+    return {"ok": True, "gate_key": gk, "status": status}
+
+
+def act_confirm_payout(payload: dict) -> dict:
+    pid = payload.get("payout_id")
+    if pid is None:
+        return {"ok": False, "reason": "payout_id required"}
+    with _DB_LOCK, db() as con:
+        row = con.execute("SELECT * FROM deck_payouts WHERE id=?", (int(pid),)).fetchone()
+        if not row:
+            return {"ok": False, "reason": "payout not found"}
+        amount = float(payload.get("landed_yen", row["amount_yen"]) or 0.0)
+        con.execute("UPDATE deck_payouts SET status=?, amount_yen=?, note=?, updated_at=? WHERE id=?",
+                    (ST_LANDED, amount,
+                     (row["note"] or "") + f" | 着金確定 {now_iso()} {amount}円",
+                     now_iso(), int(pid)))
+        con.commit()
+    return {"ok": True, "payout_id": int(pid), "landed_yen": amount,
+            "money": money_summary()}
+
+
+def act_reject_payout(payload: dict) -> dict:
+    pid = payload.get("payout_id")
+    if pid is None:
+        return {"ok": False, "reason": "payout_id required"}
+    with _DB_LOCK, db() as con:
+        con.execute("UPDATE deck_payouts SET status=?, note=COALESCE(note,'')||?, updated_at=? WHERE id=?",
+                    (ST_REJECTED, f" | 却下 {now_iso()} {payload.get('reason','')}", now_iso(), int(pid)))
+        con.commit()
+    return {"ok": True, "money": money_summary()}
+
+
+def act_hold_payout(payload: dict) -> dict:
+    pid = payload.get("payout_id")
+    if pid is None:
+        return {"ok": False, "reason": "payout_id required"}
+    with _DB_LOCK, db() as con:
+        con.execute("UPDATE deck_payouts SET status=?, updated_at=? WHERE id=?",
+                    (ST_HOLD, now_iso(), int(pid)))
+        con.commit()
+    return {"ok": True, "money": money_summary()}
+
+
+def act_add_payout(payload: dict) -> dict:
+    with _DB_LOCK, db() as con:
+        cur = con.execute(
+            "INSERT INTO deck_payouts(source,title,url,amount_yen,status,note,created_at,updated_at)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (payload.get("source", "manual"), payload.get("title", ""), payload.get("url", ""),
+             float(payload.get("amount_yen", 0) or 0), ST_PENDING,
+             payload.get("note", ""), now_iso(), now_iso()))
+        con.commit()
+        return {"ok": True, "payout_id": cur.lastrowid}
+
+
+def act_heartbeat(payload: dict) -> dict:
+    """ROGからの死活。Grok Bot経由ではなくHTTP直結。"""
+    with _DB_LOCK, db() as con:
+        con.execute("INSERT INTO rog_events(ts,task_id,site,status,detail) VALUES(?,?,?,?,?)",
+                    (now_iso(), "heartbeat", str(payload.get("host", "rog")),
+                     "alive", json.dumps(payload, ensure_ascii=False)[:1000]))
+        con.commit()
+    return {"ok": True, "server_time": now_iso()}
+
+
+ACTIONS = {
+    "run_algora_scan": job_run_algora_scan,
+    "dispatch_rog_gui": lambda p: dispatch_rog_gui(p),
+    "ack_rog_results": lambda p: ack_rog_results(),
+    "update_gate": act_update_gate,
+    "confirm_payout": act_confirm_payout,
+    "reject_payout": act_reject_payout,
+    "hold_payout": act_hold_payout,
+    "add_payout": act_add_payout,
+    "heartbeat": act_heartbeat,
+    "ping": lambda p: {"ok": True, "pong": now_iso()},
+}
+
+
+# ---------------------------------------------------------------------
+# HTTP
+# ---------------------------------------------------------------------
+class Handler(BaseHTTPRequestHandler):
+    server_version = "HarvestMasterDaemon/" + VERSION
+    protocol_version = "HTTP/1.1"
+
+    # ---- helpers ----
+    def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-        self.send_header("Access-Control-Allow-Private-Network", "true")
-        self.end_headers()
-        self.wfile.write(raw)
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Harvest-Token")
+        self.send_header("Access-Control-Max-Age", "86400")
 
-    def _send_file(self, file_path: pathlib.Path, content_type: str) -> None:
-        raw = file_path.read_bytes()
-        self.send_response(200)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(raw)))
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Access-Control-Allow-Origin", "*")
+    def _send(self, code: int, body: bytes, ctype="application/json; charset=utf-8"):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self._cors()
         self.end_headers()
-        self.wfile.write(raw)
+        self.wfile.write(body)
 
-    def do_OPTIONS(self) -> None:
+    def _json(self, code: int, obj):
+        self._send(code, json.dumps(obj, ensure_ascii=False).encode("utf-8"))
+
+    def _read_json(self) -> dict:
+        n = int(self.headers.get("Content-Length") or 0)
+        if n <= 0:
+            return {}
+        raw = self.rfile.read(n)
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except Exception:
+            return {"_raw": raw.decode("utf-8", "replace")}
+
+    # ---- verbs ----
+    def do_OPTIONS(self):
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-        self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.send_header("Content-Length", "0")
+        self._cors()
         self.end_headers()
 
-    def do_GET(self) -> None:
-        parsed = urlparse(self.path)
-        path = parsed.path
-
-        if path in ("/api/state", "/api/ledger", "/api/status"):
-            with DB_LOCK:
-                conn = get_conn()
-                try:
-                    data = fetch_full_state(conn)
-                finally:
-                    conn.close()
-            self._send_json(200, data)
-            return
-
-        if path == "/api/action":
-            with DB_LOCK:
-                conn = get_conn()
-                try:
-                    state = fetch_full_state(conn)
-                finally:
-                    conn.close()
-            self._send_json(
-                200,
-                {
-                    "ok": True,
-                    "endpoint": "POST /api/action",
-                    "supported_actions": ["set_gate", "toggle_payout", "mark_payout_landed", "complete_task", "dispatch_queue"],
-                    "db_path": str(DB_PATH),
-                    "kpi": state["kpi"],
-                    "recent_queue": state["bot_execution_queue"][:5],
-                },
-            )
-            return
-
+    def do_GET(self):
+        path = self.path.split("?", 1)[0]
         if path in ("/", "/index.html"):
-            idx = SITE_DIR / "index.html"
-            if idx.is_file():
-                self._send_file(idx, "text/html; charset=utf-8")
-                return
+            if os.path.isfile(INDEX_HTML):
+                with open(INDEX_HTML, "rb") as fh:
+                    return self._send(200, fh.read(), "text/html; charset=utf-8")
+            return self._send(200, b"<h1>harvest master daemon</h1><p>index.html not found</p>",
+                              "text/html; charset=utf-8")
+        if path == "/api/health":
+            return self._json(200, {"ok": True, "version": VERSION, "now": now_iso(),
+                                    "db": DB_PATH, "grok_quota_pct": 0.0})
+        if path == "/api/state":
+            try:
+                return self._json(200, build_state())
+            except Exception:
+                return self._json(500, {"ok": False, "error": traceback.format_exc()})
+        if path == "/api/logs":
+            try:
+                with open(JOB_LOG_PATH, encoding="utf-8") as fh:
+                    lines = fh.readlines()[-200:]
+                return self._json(200, {"ok": True, "lines": lines})
+            except FileNotFoundError:
+                return self._json(200, {"ok": True, "lines": []})
+        if path == "/api/rog_queue":
+            qp = os.path.join(BRAIN_REPO, ROG_QUEUE_REL)
+            if os.path.isfile(qp):
+                with open(qp, encoding="utf-8") as fh:
+                    return self._send(200, fh.read().encode("utf-8"))
+            return self._json(200, {"version": 1, "tasks": []})
+        return self._json(404, {"ok": False, "reason": "not found", "path": path})
 
-        if path == "/board.json":
-            bj = SITE_DIR / "board.json"
-            if bj.is_file():
-                self._send_file(bj, "application/json; charset=utf-8")
-                return
-
-        self._send_json(404, {"ok": False, "error": f"Path not found: {path}"})
-
-    def do_POST(self) -> None:
-        parsed = urlparse(self.path)
-        if parsed.path != "/api/action":
-            self._send_json(404, {"ok": False, "error": f"POST only supported on /api/action (got {parsed.path})"})
-            return
-
+    def do_POST(self):
+        path = self.path.split("?", 1)[0]
+        if path != "/api/action":
+            return self._json(404, {"ok": False, "reason": "not found", "path": path})
+        payload = self._read_json()
+        action = payload.get("action") or payload.get("cmd")
+        if not action:
+            return self._json(400, {"ok": False, "reason": "action required",
+                                    "available": sorted(ACTIONS.keys())})
+        fn = ACTIONS.get(action)
+        if not fn:
+            return self._json(400, {"ok": False, "reason": f"unknown action: {action}",
+                                    "available": sorted(ACTIONS.keys())})
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            raw_body = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
-            payload = json.loads(raw_body) if raw_body.strip() else {}
-        except Exception as exc:
-            self._send_json(400, {"ok": False, "error": f"Invalid JSON body: {exc}"})
+            result = fn(payload) or {}
+            if "ok" not in result:
+                result["ok"] = True
+            result["action"] = action
+            result["state"] = build_state()
+            log_action(action, payload, result)
+            return self._json(200, result)
+        except Exception:
+            err = {"ok": False, "action": action, "error": traceback.format_exc()}
+            log_action(action, payload, err)
+            return self._json(500, err)
+
+    def log_message(self, fmt, *args):
+        if os.environ.get("HARVEST_HTTP_VERBOSE") == "1":
+            sys.stderr.write("[http] " + (fmt % args) + "\n")
+
+
+# ---------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------
+def main():
+    argv = sys.argv[1:]
+    init_db(force_seed=True)
+
+    if "--init" in argv:
+        s = money_summary()
+        print(json.dumps({"ok": True, "db": DB_PATH, "seeded": True, "money": s},
+                         ensure_ascii=False, indent=2))
+        if "--serve" not in argv:
             return
+    if "--selftest" in argv:
+        print(json.dumps(build_state(), ensure_ascii=False, indent=2)[:3000])
+        return
 
-        client_source = self.headers.get("Origin") or self.client_address[0] or "local-api"
-        try:
-            res = execute_action(payload, client_source=client_source)
-            self._send_json(200, res)
-        except Exception as exc:
-            self._send_json(400, {"ok": False, "error": str(exc)})
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Harvest Full-Stack DB Server")
-    parser.add_argument("--port", type=int, default=PORT)
-    parser.add_argument("--host", type=str, default=HOST)
-    args, _ = parser.parse_known_args()
-
-    init_fullstack_schema()
-    server = ThreadingHTTPServer((args.host, args.port), HarvestAPIHandler)
-    server.daemon_threads = True
-    print(f"[HarvestFullStackDB] Serving full-stack dashboard & POST /api/action on http://{args.host}:{args.port}/ -> {DB_PATH}", flush=True)
+    srv = ThreadingHTTPServer((BIND, PORT), Handler)
+    srv.daemon_threads = True
+    banner = {
+        "service": "harvest-master-daemon", "version": VERSION, "bind": f"{BIND}:{PORT}",
+        "db": DB_PATH, "brain_repo": BRAIN_REPO, "grok_bot_quota_pct": 0.0,
+        "endpoints": ["GET /api/state", "POST /api/action", "GET /api/health", "GET /"],
+        "actions": sorted(ACTIONS.keys()),
+    }
+    print(json.dumps(banner, ensure_ascii=False, indent=2), flush=True)
+    log_job("daemon", "listen", f"{BIND}:{PORT}")
     try:
-        server.serve_forever()
+        srv.serve_forever()
     except KeyboardInterrupt:
-        pass
-    return 0
+        log_job("daemon", "stop", "KeyboardInterrupt")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

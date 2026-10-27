@@ -1,607 +1,312 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Harvest Command Deck v2.8 — Galaxy S25 Ultra Global 4-OSS + 5-Tech Edition</title>
-  <style>
-    :root {
-      --bg: #080b11;
-      --surface: #111723;
-      --surface-elevated: #172031;
-      --border: #25324a;
-      --text: #f3f6fc;
-      --muted: #93a3bf;
-      --emerald: #10b981;
-      --emerald-bg: rgba(16, 185, 129, 0.14);
-      --amber: #f59e0b;
-      --amber-bg: rgba(245, 158, 11, 0.14);
-      --cyan: #06b6d4;
-      --cyan-bg: rgba(6, 182, 212, 0.14);
-      --rose: #f43f5e;
-      --rose-bg: rgba(244, 63, 94, 0.14);
-      --violet: #8b5cf6;
-      --violet-bg: rgba(139, 92, 246, 0.14);
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      line-height: 1.5;
-      padding: 14px 12px 56px;
-      max-width: 520px;
-      margin: 0 auto;
-    }
-    header {
-      background: linear-gradient(145deg, #131b2e 0%, #0d1320 100%);
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 16px;
-      margin-bottom: 16px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-    }
-    .badge-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-bottom: 8px;
-    }
-    .pill {
-      font-size: 11px;
-      font-weight: 700;
-      padding: 3px 9px;
-      border-radius: 999px;
-      letter-spacing: 0.02em;
-    }
-    .pill-emerald { background: var(--emerald-bg); color: #34d399; border: 1px solid rgba(16,185,129,0.35); }
-    .pill-cyan { background: var(--cyan-bg); color: #22d3ee; border: 1px solid rgba(6,182,212,0.35); }
-    .pill-amber { background: var(--amber-bg); color: #fbbf24; border: 1px solid rgba(245,158,11,0.35); }
-    .pill-rose { background: var(--rose-bg); color: #fb7185; border: 1px solid rgba(244,63,94,0.35); }
-    .pill-violet { background: var(--violet-bg); color: #c4b5fd; border: 1px solid rgba(139,92,246,0.35); }
-    h1 { font-size: 19px; font-weight: 800; letter-spacing: -0.01em; margin-bottom: 4px; }
-    .subtitle { font-size: 12px; color: var(--muted); }
-    .section-title {
-      font-size: 13.5px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: #cbd5e1;
-      margin: 20px 2px 10px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 6px;
-    }
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 14px;
-      margin-bottom: 12px;
-    }
-    .card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-    .card-title { font-size: 14px; font-weight: 700; color: var(--text); }
-    .card-desc { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
-    .btn-group {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      margin-top: 8px;
-    }
-    button.gate-btn {
-      appearance: none;
-      border: 1px solid var(--border);
-      background: var(--surface-elevated);
-      color: var(--text);
-      font-size: 12px;
-      font-weight: 700;
-      padding: 11px 6px;
-      border-radius: 12px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-    }
-    button.gate-btn.active-approve {
-      background: rgba(16, 185, 129, 0.22);
-      border-color: var(--emerald);
-      color: #6ee7b7;
-    }
-    button.gate-btn.active-hold {
-      background: rgba(245, 158, 11, 0.22);
-      border-color: var(--amber);
-      color: #fde68a;
-    }
-    button.gate-btn.active-reject {
-      background: rgba(244, 63, 94, 0.22);
-      border-color: var(--rose);
-      color: #fda4af;
-    }
-    .payout-btn {
-      margin-top: 8px;
-      width: 100%;
-      appearance: none;
-      border: 1px solid rgba(16, 185, 129, 0.45);
-      background: rgba(16, 185, 129, 0.12);
-      color: #6ee7b7;
-      font-size: 12px;
-      font-weight: 800;
-      padding: 10px;
-      border-radius: 10px;
-      cursor: pointer;
-    }
-    .payout-btn.landed {
-      border-color: rgba(245, 158, 11, 0.5);
-      background: rgba(245, 158, 11, 0.16);
-      color: #fde68a;
-    }
-    .cmd-box {
-      margin-top: 10px;
-      padding: 9px 11px;
-      background: #070a10;
-      border: 1px dashed #334155;
-      border-radius: 10px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 11px;
-      color: #a5f3fc;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 8px;
-    }
-    .copy-btn {
-      background: #1e293b;
-      color: #e2e8f0;
-      border: 1px solid #475569;
-      border-radius: 8px;
-      padding: 4px 8px;
-      font-size: 11px;
-      font-weight: 700;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-    .kpi-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 10px;
-    }
-    .kpi-card {
-      background: var(--surface);
-      border-radius: 16px;
-      padding: 15px;
-      border: 1px solid var(--border);
-    }
-    .kpi-zero { border-left: 4px solid var(--rose); }
-    .kpi-pending { border-left: 4px solid var(--cyan); }
-    .kpi-existing { border-left: 4px solid var(--emerald); }
-    .kpi-tech { border-left: 4px solid var(--violet); }
-    .kpi-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; }
-    .kpi-val { font-size: 24px; font-weight: 900; margin: 4px 0 4px; letter-spacing: -0.02em; }
-    .kpi-note { font-size: 11.5px; color: var(--muted); }
-    .item-list { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 9px; }
-    .item-row {
-      background: var(--surface-elevated);
-      border: 1px solid #223049;
-      border-radius: 12px;
-      padding: 10px 12px;
-      font-size: 12px;
-    }
-    .item-row a {
-      color: #38bdf8;
-      text-decoration: underline;
-      word-break: break-all;
-      font-weight: 700;
-    }
-    .item-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-weight: 700; flex-wrap: wrap; gap: 4px; }
-    .sec-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-top: 8px;
-    }
-    .sec-tile {
-      background: var(--surface-elevated);
-      border: 1px solid #24344d;
-      border-radius: 12px;
-      padding: 10px;
-    }
-    .sec-tile-title { font-size: 11px; color: var(--muted); font-weight: 700; }
-    .sec-tile-val { font-size: 13.5px; font-weight: 800; color: #34d399; margin-top: 2px; }
-    .code-inline {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 11px;
-      background: #0b101b;
-      padding: 2px 6px;
-      border-radius: 6px;
-      color: #67e8f9;
-    }
-    footer {
-      margin-top: 22px;
-      text-align: center;
-      font-size: 11px;
-      color: var(--muted);
-    }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HARVEST COMMAND DECK — 実着金 / 審査待ち / 既存残高 / 固定費</title>
+<style>
+  :root{
+    --bg:#07090d; --panel:#0e1219; --line:#1d2430; --txt:#e8eef7; --dim:#8b97a8;
+    --landed:#22c55e; --pending:#eab308; --existing:#3b82f6; --cut:#f97316; --err:#ef4444;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
+  header{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  h1{font-size:15px;margin:0;letter-spacing:.14em;font-family:var(--mono)}
+  .badge{font-family:var(--mono);font-size:11px;border:1px solid var(--line);padding:4px 8px;border-radius:999px;color:var(--dim)}
+  .badge.ok{color:var(--landed);border-color:#14532d}
+  .badge.ng{color:var(--err);border-color:#7f1d1d}
+  main{padding:18px 20px 60px;max-width:1180px;margin:0 auto}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+  @media(max-width:900px){.kpis{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.kpis{grid-template-columns:1fr}}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;position:relative;overflow:hidden}
+  .kpi::before{content:"";position:absolute;inset:0 auto 0 0;width:4px}
+  .kpi.landed::before{background:var(--landed)}
+  .kpi.pending::before{background:var(--pending)}
+  .kpi.existing::before{background:var(--existing)}
+  .kpi.cut::before{background:var(--cut)}
+  .kpi .lbl{font-size:11px;color:var(--dim);letter-spacing:.06em;margin-bottom:8px;line-height:1.5}
+  .kpi .val{font-family:var(--mono);font-size:30px;font-weight:700}
+  .kpi.landed .val{color:var(--landed)} .kpi.pending .val{color:var(--pending)}
+  .kpi.existing .val{color:var(--existing)} .kpi.cut .val{color:var(--cut)}
+  .kpi .sub{font-size:11px;color:var(--dim);margin-top:8px;line-height:1.5}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-bottom:16px}
+  section > h2{font-size:12px;margin:0;padding:13px 16px;border-bottom:1px solid var(--line);
+    font-family:var(--mono);letter-spacing:.1em;color:var(--dim)}
+  .pad{padding:14px 16px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--dim);font-weight:600;font-size:11px;letter-spacing:.06em}
+  a{color:#7dd3fc;text-decoration:none;word-break:break-all}
+  a:hover{text-decoration:underline}
+  .tag{font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
+  .tag.pending_review{color:var(--pending);border-color:#713f12}
+  .tag.landed{color:var(--landed);border-color:#14532d}
+  .tag.rejected{color:var(--err);border-color:#7f1d1d}
+  .tag.gate_hold{color:#a78bfa;border-color:#4c1d95}
+  .tag.open{color:var(--pending);border-color:#713f12}
+  .tag.done{color:var(--landed);border-color:#14532d}
+  .btns{display:flex;gap:10px;flex-wrap:wrap}
+  button{background:#131a24;color:var(--txt);border:1px solid var(--line);border-radius:9px;
+    padding:10px 14px;font-size:12.5px;cursor:pointer;font-family:inherit}
+  button:hover{border-color:#334155;background:#172030}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.primary{background:#0b3d24;border-color:#14532d;color:#d1fae5}
+  button.danger{background:#3f1212;border-color:#7f1d1d;color:#fee2e2}
+  button.mini{padding:5px 9px;font-size:11px}
+  input,select{background:#0b0f16;color:var(--txt);border:1px solid var(--line);
+    border-radius:8px;padding:9px 10px;font-size:12.5px;font-family:inherit;width:100%}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .row > *{flex:0 0 auto}
+  .grow{flex:1 1 260px}
+  pre{font-family:var(--mono);font-size:11px;background:#080b10;border:1px solid var(--line);
+    border-radius:9px;padding:12px;max-height:300px;overflow:auto;margin:0;color:#9fb0c4}
+  .dim{color:var(--dim);font-size:11.5px;line-height:1.6}
+  .toast{position:fixed;right:16px;bottom:16px;background:#111823;border:1px solid var(--line);
+    border-radius:10px;padding:12px 14px;font-size:12.5px;max-width:380px;display:none;z-index:99}
+  .toast.show{display:block}
+  .spin{display:inline-block;width:11px;height:11px;border:2px solid #334155;border-top-color:#7dd3fc;
+    border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
 </head>
 <body>
-  <header>
-    <div class="badge-row">
-      <span class="pill pill-emerald">Galaxy S25 Ultra UI</span>
-      <span class="pill pill-violet">v2.8 Global 4-OSS + 5-Tech</span>
-      <span class="pill pill-cyan">100% Fact-Verified</span>
-    </div>
-    <h1>Harvest Command Deck v2.8</h1>
-    <div class="subtitle">最終実測更新: 2026-10-27 11:27 JST (UTC+9) ｜ AutoPR(@8886ddc) × Lila(@8afb084) × SolanaBountyHunter(@3193f62) × xyaz(@8cd8cb9) 実機統合</div>
-  </header>
+<header>
+  <h1>HARVEST COMMAND DECK</h1>
+  <span class="badge" id="bApi">API: —</span>
+  <span class="badge" id="bQuota">GROK BOT QUOTA: 0.0%</span>
+  <span class="badge" id="bTime">—</span>
+  <span style="flex:1"></span>
+  <span class="badge ok" id="bMode">VM + ROG DIRECT (MCP不要)</span>
+</header>
 
-  <!-- 1. 最上部：ワンタップ承認ゲート（3大境界線ガバナンスUI） -->
-  <div class="section-title">
-    <span>① ワンタップ承認ゲート（3大境界線）</span>
-    <span class="pill pill-amber" id="gate-summary-badge">保留・要確認 2件</span>
-  </div>
-
-  <div class="card" data-gate-id="gate-google-ai-pro">
-    <div class="card-header">
-      <div>
-        <span class="pill pill-rose">境界③：不可逆操作・固定費削減</span>
-        <div class="card-title" style="margin-top:6px;">Google AI Pro 5TB 重複課金解約の最終確定</div>
-      </div>
-      <span class="pill pill-emerald">年 34,800円 節約</span>
+<main>
+  <div class="kpis">
+    <div class="kpi landed">
+      <div class="lbl">① 新規実着金確定額<br>actual_landed_yen</div>
+      <div class="val" id="kLanded">¥0</div>
+      <div class="sub" id="sLanded">口座に着金した分のみ。水増しゼロ。</div>
     </div>
-    <div class="card-desc">
-      期限: 2026-12-04 ｜ 2アカウント重複課金のうち1つを解約確定します。不可逆操作のためワンタップ承認後にのみ実行します。
+    <div class="kpi pending">
+      <div class="lbl">② 提出済・審査待ちPR見込み額<br>submitted_pending_yen</div>
+      <div class="val" id="kPending">¥0</div>
+      <div class="sub" id="sPending">マージ&着金まで確定額にしない。</div>
     </div>
-    <div class="btn-group">
-      <button class="gate-btn" onclick="setGate('gate-google-ai-pro','approve','✅ 承認して実行: Google AI Pro 5TB 重複課金解約を確定')">✅ 承認して実行</button>
-      <button class="gate-btn active-hold" onclick="setGate('gate-google-ai-pro','hold','⏸️ 保留: Google AI Pro 5TB 重複課金解約を保留')">⏸️ 保留</button>
-      <button class="gate-btn" onclick="setGate('gate-google-ai-pro','reject','❌ 却下: Google AI Pro 5TB 重複課金解約を却下')">❌ 却下</button>
+    <div class="kpi existing">
+      <div class="lbl">③ 既存保有ポイント残高<br>existing_balance_yen</div>
+      <div class="val" id="kExisting">¥0</div>
+      <div class="sub" id="sExisting">ボット稼働とは無関係の元残高。</div>
     </div>
-    <div class="cmd-box">
-      <span id="cmd-gate-google-ai-pro">ステータス: ⏸️ 保留（ワンタップで切替＆コマンド生成）</span>
-      <button class="copy-btn" onclick="copyGateCmd('gate-google-ai-pro')">コピー</button>
+    <div class="kpi cut">
+      <div class="lbl">④ 固定費解約ターゲット<br>monthly_cut_yen</div>
+      <div class="val" id="kCut">¥0</div>
+      <div class="sub" id="sCut">サブスク解約による削減額。</div>
     </div>
   </div>
 
-  <div class="card" data-gate-id="gate-olive-welkatsu">
-    <div class="card-header">
-      <div>
-        <span class="pill pill-cyan">境界①：ポイント複利配分ルート固定</span>
-        <div class="card-title" style="margin-top:6px;">Olive Vポイント 40,000pt → ウエル活 WAON POINT 1.5倍ルート固定</div>
+  <section>
+    <h2>API接続</h2>
+    <div class="pad">
+      <div class="row">
+        <div class="grow"><input id="apiBase" placeholder="https://xxxx.trycloudflare.com または http://127.0.0.1:8799"></div>
+        <button onclick="saveApi()">保存</button>
+        <button onclick="loadState()">再読込</button>
       </div>
-      <span class="pill pill-emerald">60,000円 相当化</span>
-    </div>
-    <div class="card-desc">
-      着金予定: 2026-11-30 ｜ 通常等価交換（40,000円）を禁止し、WAON POINT交換＋毎月20日ウエルシア1.5倍（60,000円分）にロックします。
-    </div>
-    <div class="btn-group">
-      <button class="gate-btn active-approve" onclick="setGate('gate-olive-welkatsu','approve','✅ 承認して実行: Olive 40,000pt ウエル活1.5倍(60,000円分)ルート固定')">✅ 承認して実行</button>
-      <button class="gate-btn" onclick="setGate('gate-olive-welkatsu','hold','⏸️ 保留: Olive 40,000pt ルート固定を保留')">⏸️ 保留</button>
-      <button class="gate-btn" onclick="setGate('gate-olive-welkatsu','reject','❌ 却下: Olive 40,000pt ルート固定を却下')">❌ 却下</button>
-    </div>
-    <div class="cmd-box">
-      <span id="cmd-gate-olive-welkatsu">ステータス: ✅ 承認済（ウエル活1.5倍ルートロック中）</span>
-      <button class="copy-btn" onclick="copyGateCmd('gate-olive-welkatsu')">コピー</button>
-    </div>
-  </div>
-
-  <div class="card" data-gate-id="gate-l2-airdrop-sig">
-    <div class="card-header">
-      <div>
-        <span class="pill pill-amber">境界①・②：暗号資産・ガス代署名</span>
-        <div class="card-title" style="margin-top:6px;">L2エアドロ請求時のオンチェーン署名（ガス代発生時のみ）</div>
-      </div>
-      <span class="pill pill-cyan">0円Readは自動</span>
-    </div>
-    <div class="card-desc">
-      秘密鍵の平文読取は永久禁止。未請求エアドロのRead照会は0円自動実行し、ガス代またはトランザクション署名が必要な場合のみここで承認を要求します。
-    </div>
-    <div class="btn-group">
-      <button class="gate-btn" onclick="setGate('gate-l2-airdrop-sig','approve','✅ 承認して実行: L2エアドロ請求オンチェーン署名を許可')">✅ 承認して実行</button>
-      <button class="gate-btn active-hold" onclick="setGate('gate-l2-airdrop-sig','hold','⏸️ 保留: ガス代発生トランザクションは都度承認待ち')">⏸️ 保留</button>
-      <button class="gate-btn" onclick="setGate('gate-l2-airdrop-sig','reject','❌ 却下: オンチェーン署名を却下')">❌ 却下</button>
-    </div>
-    <div class="cmd-box">
-      <span id="cmd-gate-l2-airdrop-sig">ステータス: ⏸️ 保留（0円Readのみ自動・ガス代署名は停止中）</span>
-      <button class="copy-btn" onclick="copyGateCmd('gate-l2-airdrop-sig')">コピー</button>
-    </div>
-  </div>
-
-  <!-- 2. 100%ファクト厳密分離KPIカード ＋ 【Lila Operator PWA方式】実着金確認ボタン -->
-  <div class="section-title">
-    <span>② 100%ファクト厳密分離KPI（Mark Payout Gate付）</span>
-  </div>
-
-  <div class="kpi-grid">
-    <!-- KPI 1: 新規実着金額 -->
-    <div class="kpi-card kpi-zero">
-      <div class="kpi-label">① ボット新規実着金額（口座・ウォレット着金済）</div>
-      <div class="kpi-val" id="kpi-landed-val" style="color: #fb7185;">0円 <span style="font-size:15px;font-weight:700;">($0.00)</span></div>
-      <div class="kpi-note" id="kpi-landed-note">
-        ※まだ口座・ウォレットに着金していない審査待ちPRやアノちゃん既存資産を1円たりとも混ぜていません。【Lila Operator PWA方式】により、実際に着金した時だけ下の「💰 着金確定」ボタンでここへ昇格します。
+      <div class="dim" style="margin-top:8px">
+        Pages版から使う場合は Cloudflare Tunnel の URL を入れてください（<code>?api=</code> でも可）。
+        Port8799直結時は空欄でOK。
       </div>
     </div>
+  </section>
 
-    <!-- KPI 2: 実提出済・審査待ちバウンティ＆ROG実測結果 -->
-    <div class="kpi-card kpi-pending">
-      <div class="kpi-label">② 実提出済・審査待ちバウンティ PR ＆ Mark Payout Landed Gate</div>
-      <div class="kpi-val" id="kpi-pending-val" style="color: #38bdf8;">$75.00 <span style="font-size:15px;font-weight:700;">(約11,250円 審査待ち / 実PR 2本提出済)</span></div>
-      <div class="kpi-note">15分周期 <span class="code-inline">pr_review_watcher</span> 自動監視中 ｜ 実着金時のみワンタップでKPI①へ移動：</div>
-
-      <div class="item-list">
-        <div class="item-row">
-          <div class="item-meta">
-            <span class="pill pill-cyan">実提出済 PR #4138</span>
-            <span class="pill pill-emerald">WATCHER: OPEN / MERGEABLE</span>
-            <span style="color:#38bdf8;">$75 USDC (11,250円)</span>
-          </div>
-          <div style="font-weight:700;margin-bottom:3px;">zhangjiayang6835-cyber/bounty-plaza #1904</div>
-          <div style="color:var(--muted);margin-bottom:5px;">
-            Stellar allowance wait &amp; RPC-lag retry/backoff knobs 実装＋単体テスト4/4 PASS<br/>
-            <span class="code-inline">ev_per_competitor: $13.23</span> ｜ <span class="code-inline">xyaz_score: 88/100</span> ｜ <span class="code-inline">repo_merge_weight: 0.6172</span>
-          </div>
-          <div>🔗 PR: <a href="https://github.com/zhangjiayang6835-cyber/bounty-plaza/pull/4138" target="_blank" rel="noopener">https://github.com/zhangjiayang6835-cyber/bounty-plaza/pull/4138</a></div>
-          <div>🔗 Claim: <a href="https://github.com/zhangjiayang6835-cyber/bounty-plaza/issues/1904#issuecomment-6431844463" target="_blank" rel="noopener">https://github.com/zhangjiayang6835-cyber/bounty-plaza/issues/1904#issuecomment-6431844463</a></div>
-          <button class="payout-btn" id="btn-payout-4138" onclick="togglePayout('4138', 11250, 75)">
-            💰 着金確定（口座着金後にタップして 0円 → 11,250円 実着金へ計上）
-          </button>
-        </div>
-
-        <div class="item-row">
-          <div class="item-meta">
-            <span class="pill pill-cyan">実提出済 PR #3922 + Intake #3921</span>
-            <span class="pill pill-emerald">CI: 19 SUCCESS / MERGEABLE</span>
-            <span style="color:#38bdf8;">OSS貢献 / Active Score 0.96</span>
-          </div>
-          <div style="font-weight:700;margin-bottom:3px;">Ikalus1988/MisakaNet #3901 (Intake: #3921)</div>
-          <div style="color:var(--muted);margin-bottom:5px;">
-            lesson_gate.py Quality Gate PASS (Score 84/100, DCO署名済, コーパス同期完了)<br/>
-            <span class="code-inline">xyaz_score: 92/100</span> ｜ <span class="code-inline">repo_merge_weight: 0.7437</span> ｜ <span class="code-inline">avg_response: 1.2h</span>
-          </div>
-          <div>🔗 PR: <a href="https://github.com/Ikalus1988/MisakaNet/pull/3922" target="_blank" rel="noopener">https://github.com/Ikalus1988/MisakaNet/pull/3922</a></div>
-          <div>🔗 Comment: <a href="https://github.com/Ikalus1988/MisakaNet/issues/3901#issuecomment-6431829472" target="_blank" rel="noopener">https://github.com/Ikalus1988/MisakaNet/issues/3901#issuecomment-6431829472</a></div>
-          <div>🔗 MCP Intake: <a href="https://github.com/Ikalus1988/MisakaNet/issues/3921" target="_blank" rel="noopener">https://github.com/Ikalus1988/MisakaNet/issues/3921</a></div>
-        </div>
-
-        <div class="item-row">
-          <div class="item-meta">
-            <span class="pill pill-amber">ROG実機パトロール実測（未完了理由明記）</span>
-            <span style="color:#fbbf24;">Single-Genuine-Account 境界</span>
-          </div>
-          <div style="color:var(--muted);">
-            ・<b>ZOZOTOWN (535pt)</b>: 未完了（理由：HTTP 403 WAF保護＋会員手動ログインセッション必要）<br/>
-            ・<b>Vpass Vポイント祭</b>: 未完了（理由：旧URL HTTP 404＋Vpass手動ログイン・2FA必要）<br/>
-            ・<b>イオンネットスーパー</b>: 未完了（理由：公開トップ HTTP 200確認済・イオンスクエア会員手動ログイン必要）<br/>
-            ・<b>Tria / AlphaDrops</b>: 未完了（理由：公開ページ HTTP 200確認済・秘密鍵不干渉原則により公開EVMアドレス未設定のため未照会）
-          </div>
-        </div>
+  <section>
+    <h2>操作（押すと Grok Bot を介さず直接 VM / ROG を発火）</h2>
+    <div class="pad">
+      <div class="btns">
+        <button class="primary" onclick="act('run_algora_scan',{limit:40,max_prs:3})">Algora採掘実行 (VM 0円枠)</button>
+        <button class="primary" onclick="act('run_algora_scan',{limit:40,max_prs:1,dry_run:true})">Algora ドライラン</button>
+        <button onclick="act('dispatch_rog_gui',{sites:['vpass','rakuten','ion','zozo']})">ROG Chromeエントリー実行 (全サイト)</button>
+        <button onclick="act('dispatch_rog_gui',{sites:['zozo']})">ZOZOのみ (Akamai突破確認)</button>
+        <button onclick="act('ack_rog_results',{})">ROG結果を取込</button>
+        <button onclick="act('ping',{})">Ping</button>
       </div>
     </div>
+  </section>
 
-    <!-- KPI 3: 既存保有・達成済残高 -->
-    <div class="kpi-card kpi-existing">
-      <div class="kpi-label">③ 既存保有・達成済残高（アノちゃん既存資産・混ぜ見せ分離）</div>
-      <div class="kpi-val" style="color: #34d399;">137,226円 <span style="font-size:15px;font-weight:700;">相当（既存保有・確定枠）</span></div>
-      <div class="kpi-note">※ボットが新規に稼いだ金額ではなく、アノちゃんが既に保有・達成済の単一本物アカウント資産です。</div>
-      <div class="item-list">
-        <div class="item-row">
-          <div class="item-meta"><span>Olive Vポイント（11/30着金予定・40,000pt）</span><span style="color:#34d399;">60,000円相当（ウエル活1.5倍）</span></div>
-        </div>
-        <div class="item-row">
-          <div class="item-meta"><span>楽天ポイント（既存保有残高）</span><span style="color:#34d399;">52,089円相当</span></div>
-        </div>
-        <div class="item-row">
-          <div class="item-meta"><span>BEAMS CLUB ポイント（既存保有残高）</span><span style="color:#34d399;">23,732円相当</span></div>
-        </div>
-        <div class="item-row">
-          <div class="item-meta"><span>New Balance myNB ポイント（既存保有残高）</span><span style="color:#34d399;">1,405円相当</span></div>
-        </div>
-      </div>
+  <section>
+    <h2>Payouts（提出物と着金ステータス / 厳密分離）</h2>
+    <div class="pad" style="padding-bottom:0"><div class="dim">着金確定ボタンは「実際に口座へ入った」時だけ押してください。</div></div>
+    <div class="pad">
+      <table>
+        <thead><tr><th>Status</th><th>Source</th><th>Title / URL</th><th style="text-align:right">見込み</th><th>操作</th></tr></thead>
+        <tbody id="payoutRows"></tbody>
+      </table>
     </div>
-  </div>
+  </section>
 
-  <!-- 3. 実機クローン導入済グローバル4大OSSエンジン ＋ 5大実戦機構（v2.8 Live Telemetry） -->
-  <div class="section-title">
-    <span>③ 導入済グローバル4大OSS ＆ 5大実戦機構（v2.8）</span>
-    <span class="pill pill-violet">4 OSS + 5 TECH ACTIVE</span>
-  </div>
-
-  <div class="kpi-card kpi-tech">
-    <div class="kpi-label">Global Bounty Engine v2.8 (Box: /workspace/vendor/global_agents &amp; ROG: C:\Users\hidey\work\brain\vendor\global_agents)</div>
-    <div class="item-list">
-      <div class="item-row">
-        <div class="item-meta">
-          <span class="pill pill-emerald">OSS #1: 64johnlee/autopr (@8886ddc)</span>
-          <span class="pill pill-cyan">DashScope/Qwen無効化済</span>
-        </div>
-        <div style="color:var(--muted);">
-          ・統合機能: Algora/Opire Scanner + 競合PR計数 + SQLite <span class="code-inline">repo_reputation_memory</span> バンディット学習<br/>
-          ・モデル束縛: <span class="code-inline">nvidia/nemotron-3-ultra-550b-a55b:free</span> + <span class="code-inline">cohere/north-mini-code:free</span><br/>
-          ・学習値: <span class="code-inline">MisakaNet (0.7437)</span> / <span class="code-inline">parabola (0.7705)</span> / <span class="code-inline">bounty-plaza (0.6172)</span> / <span class="code-inline">abandoned (0.0 AUTO_SKIP)</span>
-        </div>
-      </div>
-
-      <div class="item-row">
-        <div class="item-meta">
-          <span class="pill pill-emerald">OSS #2: PARKSystemsCorporation/Lila (@8afb084)</span>
-          <span class="pill pill-cyan">DeepSeek API無効化済</span>
-        </div>
-        <div style="color:var(--muted);">
-          ・統合機能: <b>Forge</b> ($50〜$200 Bug/Feature スイートスポット抽出) + <b>Scout</b> Dry-Time自動フォールバック + <b>Mark Payout Landed Gate</b><br/>
-          ・算出式: <span class="code-inline">ev_per_competitor = reward_usd / (1 + competing_prs * 2.5) * repo_merge_weight</span><br/>
-          ・枯渇時 (<span class="code-inline">EV &lt; $12</span>) はLLM呼び出し0回で国内確定ポイ活・固定費削減・PR監視へ自動シフト。
-        </div>
-      </div>
-
-      <div class="item-row">
-        <div class="item-meta">
-          <span class="pill pill-emerald">OSS #3: AfaAgent/solana-bounty-hunter (@3193f62)</span>
-          <span class="pill pill-cyan">外部鍵・XRZLG財布除去済</span>
-        </div>
-        <div style="color:var(--muted);">
-          ・統合機能: Superteam Earn <span class="code-inline">/api/agents/listings/live</span> AIエージェント許可案件スキャナ（Read-Only安全モード）<br/>
-          ・元のコードにあった外部作者のハードコードAPI鍵および外部Solanaウォレットは完全除去済。
-        </div>
-      </div>
-
-      <div class="item-row">
-        <div class="item-meta">
-          <span class="pill pill-emerald">OSS #4: xyaz1313/bounty-hunter-agent (@8cd8cb9)</span>
-          <span class="pill pill-cyan">18件 Live Scan 完了</span>
-        </div>
-        <div style="color:var(--muted);">
-          ・統合機能: 多言語 <span class="code-inline">gh search issues</span> + 0-100 Feasibility評価器 + 15分周期 <span class="code-inline">pr_review_watcher</span><br/>
-          ・AirdropAlert 2026年9月論文方式の <b>AI Sybil検知回避（複垢量産0件・単一本物垢深耕・Repo固有Stylometry順応）</b> と連動稼働中。
-        </div>
-      </div>
+  <section>
+    <h2>承認ゲート（人が1回だけ通す項目）</h2>
+    <div class="pad">
+      <table>
+        <thead><tr><th>Status</th><th>Gate</th><th>Detail</th><th>期限</th><th>操作</th></tr></thead>
+        <tbody id="gateRows"></tbody>
+      </table>
     </div>
-  </div>
+  </section>
 
-  <!-- 4. セキュリティ＆ガバナンス証明パネル -->
-  <div class="section-title">
-    <span>④ セキュリティ＆ガバナンス証明パネル</span>
-    <span class="pill pill-emerald">ALL GREEN</span>
-  </div>
+  <section>
+    <h2>既存残高 / 固定費 内訳</h2>
+    <div class="pad"><table><thead><tr><th>Bucket</th><th>Key</th><th>Label</th><th style="text-align:right">金額</th></tr></thead><tbody id="itemRows"></tbody></table></div>
+  </section>
 
-  <div class="card">
-    <div class="card-title">ゼロトラスト＆0円自律稼働ガードレール状態</div>
-    <div class="sec-grid">
-      <div class="sec-tile">
-        <div class="sec-tile-title">パスワード・秘密鍵 平文露出</div>
-        <div class="sec-tile-val">0 件 (完全ゼロ)</div>
-      </div>
-      <div class="sec-tile">
-        <div class="sec-tile-title">中国系LLM・外部不正Webhook</div>
-        <div class="sec-tile-val">0 件 (完全無効化済)</div>
-      </div>
-      <div class="sec-tile">
-        <div class="sec-tile-title">CaMeL Dual-LLM 権限分離</div>
-        <div class="sec-tile-val">ENFORCED (Untrusted隔離)</div>
-      </div>
-      <div class="sec-tile">
-        <div class="sec-tile-title">OWASP LLM06 最小権限 + FIDO2</div>
-        <div class="sec-tile-val">PASSKEY PROTECTED</div>
-      </div>
-    </div>
-    <div style="margin-top:10px;font-size:11.5px;color:var(--muted);">
-      ・就業時間帯（09:30〜18:00 JST）MacBook Air 不干渉ルール：<b>厳守中（接触 0回）</b><br/>
-      ・使用LLMモデル：非中国系・完全無料（$0）3モデル（<span class="code-inline">nemotron-3-ultra</span> / <span class="code-inline">north-mini-code</span> / <span class="code-inline">laguna-s-2.1</span>）のみ固定
-    </div>
-  </div>
+  <section>
+    <h2>ROG 実行イベント</h2>
+    <div class="pad"><table><thead><tr><th>時刻</th><th>Site</th><th>Status</th><th>Detail</th></tr></thead><tbody id="rogRows"></tbody></table></div>
+  </section>
 
-  <footer>
-    Harvest Command Deck v2.8 — Ledger DB: <code>.harvest_cfo.db (realized_ledger + repo_reputation_memory + pr_review_watcher_state + global_oss_engines + global_bounty_candidates)</code>
-  </footer>
+  <section>
+    <h2>Job / Action ログ</h2>
+    <div class="pad"><pre id="logBox">—</pre></div>
+  </section>
+</main>
 
-  <script>
-    const STORAGE_KEY = 'harvest_command_deck_gates_v28';
-    const PAYOUT_KEY = 'harvest_command_deck_payouts_v28';
-    const defaultGates = {
-      'gate-google-ai-pro': { state: 'hold', text: 'ステータス: ⏸️ 保留（ワンタップで切替＆コマンド生成）' },
-      'gate-olive-welkatsu': { state: 'approve', text: 'ステータス: ✅ 承認済: Olive 40,000pt ウエル活1.5倍(60,000円分)ルート固定' },
-      'gate-l2-airdrop-sig': { state: 'hold', text: 'ステータス: ⏸️ 保留（0円Readのみ自動・ガス代署名は停止中）' }
-    };
+<div class="toast" id="toast"></div>
 
-    function loadGates() {
-      try {
-        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-        return Object.assign({}, defaultGates, saved);
-      } catch (e) {
-        return defaultGates;
-      }
-    }
+<script>
+const $ = (id) => document.getElementById(id);
+let API = "";
 
-    function renderGates() {
-      const gates = loadGates();
-      let pendingCount = 0;
-      Object.keys(gates).forEach(id => {
-        const card = document.querySelector(`[data-gate-id="${id}"]`);
-        if (!card) return;
-        const info = gates[id];
-        if (info.state === 'hold') pendingCount++;
-        const buttons = card.querySelectorAll('.gate-btn');
-        buttons.forEach(btn => {
-          btn.classList.remove('active-approve', 'active-hold', 'active-reject');
-        });
-        if (info.state === 'approve') buttons[0].classList.add('active-approve');
-        if (info.state === 'hold') buttons[1].classList.add('active-hold');
-        if (info.state === 'reject') buttons[2].classList.add('active-reject');
-        const cmdEl = document.getElementById('cmd-' + id);
-        if (cmdEl) cmdEl.textContent = info.text;
-      });
-      const badge = document.getElementById('gate-summary-badge');
-      if (badge) badge.textContent = `保留・要確認 ${pendingCount}件`;
-    }
+function resolveApi(){
+  const q = new URLSearchParams(location.search).get("api");
+  if (q) { localStorage.setItem("harvest_api_base", q); return q.replace(/\/$/,""); }
+  const saved = localStorage.getItem("harvest_api_base");
+  if (saved) return saved.replace(/\/$/,"");
+  if (location.protocol.startsWith("http") && !location.hostname.includes("pages.dev"))
+    return location.origin.replace(/\/$/,"");
+  return "http://127.0.0.1:8799";
+}
 
-    function setGate(id, state, cmdText) {
-      const gates = loadGates();
-      const now = new Date().toLocaleTimeString('ja-JP', { hour12: false });
-      gates[id] = { state, text: `[${now} JST] ${cmdText}` };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(gates));
-      renderGates();
-    }
+function toast(msg, bad){
+  const t = $("toast");
+  t.textContent = msg;
+  t.style.borderColor = bad ? "#7f1d1d" : "#1d2430";
+  t.classList.add("show");
+  clearTimeout(t._h);
+  t._h = setTimeout(()=>t.classList.remove("show"), 4200);
+}
 
-    function copyGateCmd(id) {
-      const el = document.getElementById('cmd-' + id);
-      if (!el) return;
-      navigator.clipboard.writeText(el.textContent).then(() => {
-        const prev = el.textContent;
-        el.textContent = '📋 クリップボードにコピーしました！そのままチャットに貼付可能';
-        setTimeout(() => { el.textContent = prev; }, 1800);
-      });
-    }
+function yen(n){ return "¥" + Math.round(Number(n)||0).toLocaleString("ja-JP"); }
 
-    function loadPayouts() {
-      try {
-        return JSON.parse(localStorage.getItem(PAYOUT_KEY) || '{}');
-      } catch (e) {
-        return {};
-      }
-    }
+async function api(path, opts){
+  const res = await fetch(API + path, Object.assign({headers:{"Content-Type":"application/json"}}, opts||{}));
+  const txt = await res.text();
+  let data; try { data = JSON.parse(txt); } catch(e){ data = {ok:false, raw:txt}; }
+  if (!res.ok) throw new Error(data.error || data.reason || ("HTTP " + res.status));
+  return data;
+}
 
-    function renderPayouts() {
-      const payouts = loadPayouts();
-      const is4138Landed = !!payouts['4138'];
-      const landedYen = is4138Landed ? 11250 : 0;
-      const landedUsd = is4138Landed ? '75.00' : '0.00';
-      const pendingYen = is4138Landed ? 0 : 11250;
-      const pendingUsd = is4138Landed ? '0.00' : '75.00';
+function saveApi(){
+  API = $("apiBase").value.trim().replace(/\/$/,"") || API;
+  localStorage.setItem("harvest_api_base", API);
+  $("apiBase").value = API;
+  toast("APIベースを保存: " + API);
+  loadState();
+}
 
-      const landedEl = document.getElementById('kpi-landed-val');
-      const pendingEl = document.getElementById('kpi-pending-val');
-      const btn4138 = document.getElementById('btn-payout-4138');
+async function act(action, payload){
+  try{
+    toast("送信中: " + action);
+    const r = await api("/api/action", {method:"POST", body: JSON.stringify(Object.assign({action}, payload||{}))});
+    if (r.state) render(r.state);
+    toast(action + " -> " + (r.accepted === false ? "既に実行中" : "受付OK"));
+  }catch(e){ toast("失敗: " + e.message, true); }
+}
 
-      if (landedEl) {
-        landedEl.style.color = is4138Landed ? '#34d399' : '#fb7185';
-        landedEl.innerHTML = `${landedYen.toLocaleString()}円 <span style="font-size:15px;font-weight:700;">($${landedUsd})</span>`;
-      }
-      if (pendingEl) {
-        pendingEl.innerHTML = `$${pendingUsd} <span style="font-size:15px;font-weight:700;">(約${pendingYen.toLocaleString()}円 審査待ち / 実PR 2本提出済)</span>`;
-      }
-      if (btn4138) {
-        if (is4138Landed) {
-          btn4138.classList.add('landed');
-          btn4138.textContent = '✅ 着金確定済（タップで未着金 0円 状態へ戻す）';
-        } else {
-          btn4138.classList.remove('landed');
-          btn4138.textContent = '💰 着金確定（口座着金後にタップして 0円 → 11,250円 実着金へ計上）';
-        }
-      }
-    }
+async function confirmPayout(id){
+  const cur = window.__state.payouts.find(p=>p.id===id);
+  const v = prompt("実際に口座へ着金した金額(円)を入力してください。", cur ? cur.amount_yen : 0);
+  if (v === null) return;
+  await act("confirm_payout", {payout_id:id, landed_yen:Number(v)||0});
+}
+async function rejectPayout(id){
+  const v = prompt("却下理由", "メンテナ却下");
+  if (v === null) return;
+  await act("reject_payout", {payout_id:id, reason:v});
+}
+async function holdPayout(id){ await act("hold_payout", {payout_id:id}); }
+async function setGate(k, st){ await act("update_gate", {gate_key:k, status:st}); }
 
-    function togglePayout(prId, yen, usd) {
-      const payouts = loadPayouts();
-      payouts[prId] = !payouts[prId];
-      localStorage.setItem(PAYOUT_KEY, JSON.stringify(payouts));
-      renderPayouts();
-    }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
-    renderGates();
-    renderPayouts();
-  </script>
+function render(s){
+  window.__state = s;
+  const m = s.money || {};
+  $("kLanded").textContent   = yen(m.actual_landed_yen);
+  $("kPending").textContent  = yen(m.submitted_pending_yen);
+  $("kExisting").textContent = yen(m.existing_balance_yen);
+  $("kCut").textContent      = yen(m.monthly_cut_yen);
+  $("sCut").textContent      = "年 " + yen(m.annual_cut_yen) + " 削減 / gate_hold " + yen(m.gate_hold_yen);
+  $("bTime").textContent     = "NOW: " + (s.now || "");
+  $("bApi").textContent      = "API: OK";
+  $("bApi").className        = "badge ok";
+
+  $("payoutRows").innerHTML = (s.payouts||[]).map(p=>`
+    <tr>
+      <td><span class="tag ${esc(p.status)}">${esc(p.status)}</span></td>
+      <td>${esc(p.source)}</td>
+      <td>${esc(p.title)}<br><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a>
+          <div class="dim">${esc(p.note)}</div></td>
+      <td style="text-align:right;font-family:var(--mono)">${yen(p.amount_yen)}</td>
+      <td><div class="btns">
+        <button class="mini" onclick="confirmPayout(${p.id})">着金確定</button>
+        <button class="mini" onclick="holdPayout(${p.id})">保留</button>
+        <button class="mini danger" onclick="rejectPayout(${p.id})">却下</button>
+      </div></td>
+    </tr>`).join("") || `<tr><td colspan="5" class="dim">なし</td></tr>`;
+
+  $("gateRows").innerHTML = (s.gates||[]).map(g=>`
+    <tr>
+      <td><span class="tag ${esc(g.status)}">${esc(g.status)}</span></td>
+      <td>${esc(g.label)}</td>
+      <td class="dim">${esc(g.detail)}</td>
+      <td>${esc(g.deadline)}</td>
+      <td><div class="btns">
+        <button class="mini" onclick="setGate('${esc(g.gate_key)}','done')">完了</button>
+        <button class="mini" onclick="setGate('${esc(g.gate_key)}','open')">未処理</button>
+      </div></td>
+    </tr>`).join("") || `<tr><td colspan="5" class="dim">なし</td></tr>`;
+
+  $("itemRows").innerHTML = (s.state_items||[]).map(i=>`
+    <tr><td>${esc(i.bucket)}</td><td class="dim">${esc(i.key)}</td><td>${esc(i.label)}</td>
+    <td style="text-align:right;font-family:var(--mono)">${yen(i.value)}</td></tr>`).join("");
+
+  $("rogRows").innerHTML = (s.rog_events||[]).map(e=>`
+    <tr><td class="dim">${esc(e.ts)}</td><td>${esc(e.site)}</td>
+    <td><span class="tag">${esc(e.status)}</span></td>
+    <td class="dim">${esc((e.detail||"").slice(0,220))}</td></tr>`).join("") || `<tr><td colspan="4" class="dim">なし</td></tr>`;
+
+  const jobs = (s.jobs||[]).slice(0,25).map(j=>`${j.started_at} [${j.status}] ${j.action} ${(j.log||"").slice(0,300)}`);
+  const logs = (s.logs||[]).slice(0,20).map(l=>`${l.ts} ${l.action} -> ${(l.result||"").slice(0,200)}`);
+  $("logBox").textContent = jobs.concat([""], logs).join("\n") || "—";
+}
+
+async function loadState(){
+  try{
+    const s = await api("/api/state");
+    render(s);
+  }catch(e){
+    $("bApi").textContent = "API: NG";
+    $("bApi").className = "badge ng";
+    $("logBox").textContent = "接続失敗: " + e.message + "\nAPIベース: " + API;
+  }
+}
+
+API = resolveApi();
+$("apiBase").value = API;
+loadState();
+setInterval(loadState, 5000);
+</script>
 </body>
 </html>
